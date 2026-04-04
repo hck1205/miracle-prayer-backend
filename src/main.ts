@@ -9,12 +9,27 @@ async function bootstrap(): Promise<void> {
   const allowedOrigins = (process.env[AUTH_ENV_KEYS.frontendOrigins] ??
     "http://localhost:5173,http://127.0.0.1:5173")
     .split(",")
-    .map((origin) => origin.trim())
-    .filter((origin) => origin.length > 0);
+    .map((origin: string) => origin.trim())
+    .filter((origin: string) => origin.length > 0);
+  const localhostOriginPattern = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
   app.setGlobalPrefix("api");
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (
+      origin: string | undefined,
+      callback: (error: Error | null, allow?: boolean) => void,
+    ) => {
+      if (
+        origin === undefined ||
+        allowedOrigins.includes(origin) ||
+        localhostOriginPattern.test(origin)
+      ) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`Origin ${origin} is not allowed by CORS.`), false);
+    },
   });
   app.useGlobalPipes(
     new ValidationPipe({

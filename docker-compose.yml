@@ -4,7 +4,7 @@ services:
     container_name: ai-wedding-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ai_wedding
+      POSTGRES_DB: miracle_prayer
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
@@ -12,7 +12,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_wedding"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d miracle_prayer"]
       interval: 10s
       timeout: 5s
       retries: 5

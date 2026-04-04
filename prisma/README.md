@@ -24,7 +24,7 @@
 
 - Host: `localhost`
 - Port: `5432`
-- Database: `ai_wedding`
+- Database: `miracle_prayer`
 - User: `postgres`
 - Password: `postgres`
 

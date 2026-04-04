@@ -25,7 +25,7 @@ GET /api/v1/auth/me
 
 ```env
 PORT=3000
-DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/ai_wedding?schema=public"
+DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/miracle_prayer?schema=public"
 JWT_ACCESS_SECRET="change-me"
 JWT_ACCESS_EXPIRES_IN="900"
 JWT_REFRESH_SECRET="change-me-refresh"

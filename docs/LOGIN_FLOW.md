@@ -28,7 +28,7 @@
 
 ```env
 PORT=3000
-DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/ai_wedding?schema=public"
+DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/miracle_prayer?schema=public"
 JWT_ACCESS_SECRET="local-dev-secret"
 JWT_ACCESS_EXPIRES_IN="900"
 JWT_REFRESH_SECRET="local-refresh-secret"
@@ -89,7 +89,7 @@ FRONTEND_ORIGINS="http://localhost:5173,http://127.0.0.1:5173"
 ```powershell
 npm install
 npx prisma generate
-$env:DATABASE_URL='postgresql://postgres:YOUR_PASSWORD@localhost:5432/ai_wedding?schema=public'
+$env:DATABASE_URL='postgresql://postgres:YOUR_PASSWORD@localhost:5432/miracle_prayer?schema=public'
 npx prisma migrate dev --name init
 npm run dev
 ```
