@@ -1,7 +1,9 @@
-import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 
-import type { FeedResponseDto } from "./feed.dto";
-import { GetFeedQueryDto } from "./feed.dto";
+import type { FeedReactionStateDto, FeedResponseDto } from "./feed.dto";
+import { GetFeedQueryDto, SetPostReactionDto } from "./feed.dto";
+import { CurrentUser } from "../auth/current-user.decorator";
+import type { AccessTokenPayload } from "../auth/jwt-auth.guard";
 import { FeedService } from "./feed.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 
@@ -11,7 +13,19 @@ export class FeedController {
   constructor(private readonly feedService: FeedService) {}
 
   @Get()
-  getFeed(@Query() query: GetFeedQueryDto): Promise<FeedResponseDto> {
-    return this.feedService.getFeed(query.limit);
+  getFeed(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() query: GetFeedQueryDto,
+  ): Promise<FeedResponseDto> {
+    return this.feedService.getFeed(query.limit, user.sub);
+  }
+
+  @Post(":postId/reactions")
+  setPostReaction(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param("postId") postId: string,
+    @Body() body: SetPostReactionDto,
+  ): Promise<FeedReactionStateDto> {
+    return this.feedService.setPostReaction(postId, user.sub, body.type);
   }
 }

@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
-import { IsInt, IsOptional, Max, Min } from "class-validator";
+import { ReactionType } from "@prisma/client";
+import { IsEnum, IsInt, IsOptional, Max, Min } from "class-validator";
 
 export class GetFeedQueryDto {
   @IsOptional()
@@ -8,6 +9,19 @@ export class GetFeedQueryDto {
   @Min(1)
   @Max(50)
   limit = 30;
+}
+
+export class SetPostReactionDto {
+  @IsEnum(ReactionType)
+  type!: ReactionType;
+}
+
+export interface FeedReactionSummaryDto {
+  LOVE: number;
+  AMEN: number;
+  WITH_YOU: number;
+  PEACE: number;
+  total: number;
 }
 
 export interface FeedItemDto {
@@ -19,10 +33,19 @@ export interface FeedItemDto {
   authorLabel: string;
   authorType: "HUMAN" | "AI";
   reactionCount: number;
+  reactionSummary: FeedReactionSummaryDto;
+  viewerReaction: ReactionType | null;
   commentCount: number;
   publishedAt: string;
 }
 
 export interface FeedResponseDto {
   items: FeedItemDto[];
+}
+
+export interface FeedReactionStateDto {
+  postId: string;
+  reactionCount: number;
+  reactionSummary: FeedReactionSummaryDto;
+  viewerReaction: ReactionType | null;
 }
