@@ -17,8 +17,24 @@
 ## What You Will See
 
 - Prisma Studio opens in a browser.
-- The `User` model appears as a table-like view.
+- The main models are `User`, `Post`, `PostReaction`, `Comment`, and `CommentReaction`.
 - You can browse, insert, and edit records directly for local development.
+
+## Current schema scope
+
+The schema currently supports:
+
+- Google-authenticated users
+- feed-style posts
+- public and anonymous visibility
+- post reactions
+- comments
+- replies to comments
+- comment reactions
+
+See the root docs for the design notes:
+
+- `../docs/DB/README.md`
 
 ## Connection Info
 

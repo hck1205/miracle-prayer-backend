@@ -2,6 +2,15 @@
 
 NestJS + TypeScript login template backend with PostgreSQL, Prisma, Google sign-in verification, JWT access tokens, refresh token rotation, and logout support.
 
+The current database design also includes the first social-feed domain models:
+
+- posts
+- post reactions
+- comments
+- replies
+- comment reactions
+- public vs anonymous visibility
+
 ## What stays in the template
 
 - Google login endpoint
@@ -63,4 +72,5 @@ npm run test:e2e
 
 - The template keeps a single refresh-token session per user.
 - Refresh tokens are stored as SHA-256 hashes, not raw token strings.
-- The `User` model only includes fields used by the current login flow.
+- The schema is now prepared for a prayer-feed style SNS feature set.
+- Root-level database design docs live under `../docs/DB`.

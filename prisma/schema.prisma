@@ -7,15 +7,135 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ContentVisibility {
+  PUBLIC
+  ANONYMOUS
+}
+
+enum PostStatus {
+  PUBLISHED
+  ARCHIVED
+  DELETED
+}
+
+enum CommentStatus {
+  PUBLISHED
+  DELETED
+}
+
+enum CommentPolicy {
+  OPEN
+  CLOSED
+}
+
+enum ReactionType {
+  LOVE
+  AMEN
+  WITH_YOU
+}
+
+enum UserType {
+  HUMAN
+  AI
+}
+
 model User {
-  id                    String    @id @default(uuid())
-  email                 String    @unique
-  googleSubject         String?   @unique @map("google_subject")
+  id                    String            @id @default(uuid())
+  email                 String            @unique
+  googleSubject         String?           @unique @map("google_subject")
   name                  String?
-  refreshTokenHash      String?   @map("refresh_token_hash")
-  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
+  userType              UserType          @default(HUMAN) @map("user_type")
+  refreshTokenHash      String?           @map("refresh_token_hash")
+  refreshTokenExpiresAt DateTime?         @map("refresh_token_expires_at")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+  posts                 Post[]            @relation("UserPosts")
+  comments              Comment[]         @relation("UserComments")
+  postReactions         PostReaction[]
+  commentReactions      CommentReaction[]
 
   @@map("users")
+}
+
+model Post {
+  id            String            @id @default(uuid())
+  authorId      String            @map("author_id")
+  visibility    ContentVisibility @default(PUBLIC)
+  status        PostStatus        @default(PUBLISHED)
+  commentPolicy CommentPolicy     @default(OPEN) @map("comment_policy")
+  body          String            @db.Text
+  reactionCount Int               @default(0) @map("reaction_count")
+  commentCount  Int               @default(0) @map("comment_count")
+  publishedAt   DateTime          @default(now()) @map("published_at")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  deletedAt     DateTime?         @map("deleted_at")
+  author        User              @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade)
+  reactions     PostReaction[]
+  comments      Comment[]
+
+  @@index([authorId, createdAt(sort: Desc)])
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([visibility, status, publishedAt(sort: Desc)])
+  @@map("posts")
+}
+
+model PostReaction {
+  id        String       @id @default(uuid())
+  postId    String       @map("post_id")
+  userId    String       @map("user_id")
+  type      ReactionType
+  createdAt DateTime     @default(now()) @map("created_at")
+  post      Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId], map: "post_reactions_post_id_user_id_key")
+  @@index([postId, type])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("post_reactions")
+}
+
+model Comment {
+  id            String            @id @default(uuid())
+  postId        String            @map("post_id")
+  authorId      String            @map("author_id")
+  parentId      String?           @map("parent_id")
+  rootCommentId String?           @map("root_comment_id")
+  visibility    ContentVisibility @default(PUBLIC)
+  status        CommentStatus     @default(PUBLISHED)
+  body          String            @db.Text
+  depth         Int               @default(0)
+  reactionCount Int               @default(0) @map("reaction_count")
+  replyCount    Int               @default(0) @map("reply_count")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  deletedAt     DateTime?         @map("deleted_at")
+  post          Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author        User              @relation("UserComments", fields: [authorId], references: [id], onDelete: Cascade)
+  parent        Comment?          @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies       Comment[]         @relation("CommentReplies")
+  rootComment   Comment?          @relation("CommentThreadRoot", fields: [rootCommentId], references: [id], onDelete: Cascade)
+  threadReplies Comment[]         @relation("CommentThreadRoot")
+  reactions     CommentReaction[]
+
+  @@index([postId, createdAt(sort: Desc)])
+  @@index([postId, parentId, createdAt(sort: Desc)])
+  @@index([postId, rootCommentId, parentId, createdAt(sort: Desc)])
+  @@index([authorId, createdAt(sort: Desc)])
+  @@map("comments")
+}
+
+model CommentReaction {
+  id        String       @id @default(uuid())
+  commentId String       @map("comment_id")
+  userId    String       @map("user_id")
+  type      ReactionType
+  createdAt DateTime     @default(now()) @map("created_at")
+  comment   Comment      @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId], map: "comment_reactions_comment_id_user_id_key")
+  @@index([commentId, type])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("comment_reactions")
 }
