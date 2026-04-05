@@ -1,7 +1,18 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from "@nestjs/common";
 
-import type { FeedReactionStateDto, FeedResponseDto } from "./feed.dto";
-import { GetFeedQueryDto, SetPostReactionDto } from "./feed.dto";
+import type {
+  CreatedFeedPostDto,
+  FeedReactionStateDto,
+  FeedResponseDto,
+  LatestFeedDraftDto,
+  UpdatedFeedPostDto,
+} from "./feed.dto";
+import {
+  CreateFeedPostDto,
+  GetFeedQueryDto,
+  SetPostReactionDto,
+  UpdateFeedPostDto,
+} from "./feed.dto";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AccessTokenPayload } from "../auth/jwt-auth.guard";
 import { FeedService } from "./feed.service";
@@ -22,6 +33,37 @@ export class FeedController {
       cursor: query.cursor,
       userId: user.sub,
     });
+  }
+
+  @Post()
+  createPost(
+    @CurrentUser() user: AccessTokenPayload,
+    @Body() body: CreateFeedPostDto,
+  ): Promise<CreatedFeedPostDto> {
+    return this.feedService.createPost(user.sub, body);
+  }
+
+  @Get("drafts/latest")
+  getLatestDraft(@CurrentUser() user: AccessTokenPayload): Promise<LatestFeedDraftDto> {
+    return this.feedService.getLatestDraft(user.sub);
+  }
+
+  @Post(":postId")
+  updatePost(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param("postId") postId: string,
+    @Body() body: UpdateFeedPostDto,
+  ): Promise<UpdatedFeedPostDto> {
+    return this.feedService.updatePost(postId, user.sub, body);
+  }
+
+  @Post(":postId/discard")
+  @HttpCode(204)
+  async discardDraft(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param("postId") postId: string,
+  ): Promise<void> {
+    await this.feedService.discardDraft(postId, user.sub);
   }
 
   @Post(":postId/reactions")

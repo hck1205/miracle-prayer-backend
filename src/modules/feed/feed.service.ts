@@ -1,15 +1,29 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { ReactionType } from "@prisma/client";
+import { PostStatus, ReactionType } from "@prisma/client";
 
 import type {
+  CreatedFeedPostDto,
+  CreateFeedPostDto,
   FeedItemDto,
   FeedReactionStateDto,
   FeedResponseDto,
+  LatestFeedDraftDto,
+  UpdatedFeedPostDto,
+  UpdateFeedPostDto,
 } from "./feed.dto";
 import { FeedRepository } from "./feed.repository";
 
 @Injectable()
 export class FeedService {
+  static readonly creatableStatuses = new Set<PostStatus>([
+    PostStatus.DRAFT,
+    PostStatus.PUBLISHED,
+  ]);
+  static readonly updatableStatuses = new Set<PostStatus>([
+    PostStatus.DRAFT,
+    PostStatus.PUBLISHED,
+  ]);
+
   constructor(private readonly feedRepository: FeedRepository) {}
 
   async getFeed({
@@ -38,31 +52,120 @@ export class FeedService {
     const lastPost = pagePosts.length > 0 ? pagePosts[pagePosts.length - 1] : undefined;
 
     return {
-      items: pagePosts.map<FeedItemDto>((post) => {
-        const reactionState = reactionStates.get(post.id);
-
-        return {
-          id: post.id,
-          body: post.body,
-          visibility: post.visibility,
-          authorLabel: "ANONYMOUS",
-          authorType: post.author.userType,
-          reactionCount: reactionState?.reactionCount ?? post.reactionCount,
-          reactionSummary: reactionState?.reactionSummary ?? {
-            LOVE: 0,
-            AMEN: 0,
-            WITH_YOU: 0,
-            PEACE: 0,
-            total: post.reactionCount,
-          },
-          viewerReaction: reactionState?.viewerReaction ?? null,
-          commentCount: post.commentCount,
-          publishedAt: post.publishedAt.toISOString(),
-        };
-      }),
-      nextCursor: hasMore ? this.encodeCursor(lastPost?.publishedAt, lastPost?.id) : null,
+      items: pagePosts.map<FeedItemDto>(
+        (post) => this.toFeedItemDto(post, userId, reactionStates.get(post.id)),
+      ),
+      nextCursor: hasMore
+          ? this.encodeCursor(lastPost?.publishedAt ?? lastPost?.createdAt, lastPost?.id)
+          : null,
       hasMore,
     };
+  }
+
+  async createPost(
+    userId: string,
+    input: CreateFeedPostDto,
+  ): Promise<CreatedFeedPostDto> {
+    const body = input.body.trim();
+
+    if (body.length === 0) {
+      throw new BadRequestException("Prayer body is required.");
+    }
+
+    if (!FeedService.creatableStatuses.has(input.status)) {
+      throw new BadRequestException("Only draft and published posts can be created.");
+    }
+
+    const createdPost = await this.feedRepository.createPost({
+      authorId: userId,
+      body,
+      visibility: input.visibility,
+      status: input.status,
+    });
+
+    return {
+      id: createdPost.id,
+      body: createdPost.body,
+      visibility: createdPost.visibility,
+      status: createdPost.status,
+      createdAt: createdPost.createdAt.toISOString(),
+      publishedAt: createdPost.publishedAt?.toISOString() ?? null,
+    };
+  }
+
+  async getLatestDraft(userId: string): Promise<LatestFeedDraftDto> {
+    const draft = await this.feedRepository.findLatestOwnedDraft(userId);
+
+    return {
+      draft:
+        draft == null
+            ? null
+            : {
+                id: draft.id,
+                body: draft.body,
+                visibility: draft.visibility,
+                status: draft.status,
+                updatedAt: draft.updatedAt.toISOString(),
+                createdAt: draft.createdAt.toISOString(),
+              },
+    };
+  }
+
+  async updatePost(
+    postId: string,
+    userId: string,
+    input: UpdateFeedPostDto,
+  ): Promise<UpdatedFeedPostDto> {
+    const body = input.body.trim();
+
+    if (body.length === 0) {
+      throw new BadRequestException("Prayer body is required.");
+    }
+
+    if (input.status != null && !FeedService.updatableStatuses.has(input.status)) {
+      throw new BadRequestException("Only draft and published posts can be updated.");
+    }
+
+    const existingPost = await this.feedRepository.findOwnedEditablePostById(
+      postId,
+      userId,
+    );
+
+    if (!existingPost) {
+      throw new NotFoundException("Editable post not found.");
+    }
+
+    const nextStatus = input.status ?? existingPost.status;
+    const nextPublishedAt =
+      nextStatus === PostStatus.DRAFT
+        ? null
+        : existingPost.publishedAt ?? new Date();
+
+    const updatedPost = await this.feedRepository.updateOwnedPost({
+      postId,
+      userId,
+      body,
+      visibility: input.visibility,
+      status: nextStatus,
+      publishedAt: nextPublishedAt,
+    });
+
+    return {
+      id: updatedPost.id,
+      body: updatedPost.body,
+      visibility: updatedPost.visibility,
+      status: updatedPost.status,
+      updatedAt: updatedPost.updatedAt.toISOString(),
+      publishedAt: updatedPost.publishedAt?.toISOString() ?? null,
+    };
+  }
+
+  async discardDraft(postId: string, userId: string): Promise<void> {
+    const discarded = await this.feedRepository.archiveOwnedDraft(postId, userId);
+
+    if (!discarded) {
+      throw new NotFoundException("Draft not found.");
+    }
   }
 
   async setPostReaction(
@@ -77,6 +180,53 @@ export class FeedService {
     }
 
     return this.feedRepository.setPostReaction(postId, userId, type);
+  }
+
+  private toFeedItemDto(
+    post: {
+      id: string;
+      authorId: string;
+      body: string;
+      visibility: "PUBLIC" | "ANONYMOUS";
+      reactionCount: number;
+      commentCount: number;
+      publishedAt: Date | null;
+      createdAt: Date;
+      author: {
+        email: string;
+        name: string | null;
+        userType: "HUMAN" | "AI";
+      };
+    },
+    userId: string,
+    reactionState?: FeedReactionStateDto,
+  ): FeedItemDto {
+    const authorName = post.author.name?.trim();
+
+    return {
+      id: post.id,
+      body: post.body,
+      visibility: post.visibility,
+      viewerCanEdit: post.authorId === userId,
+      authorLabel:
+        post.visibility === "ANONYMOUS"
+          ? "ANONYMOUS"
+          : authorName != null && authorName.length > 0
+            ? authorName
+            : post.author.email,
+      authorType: post.author.userType,
+      reactionCount: reactionState?.reactionCount ?? post.reactionCount,
+      reactionSummary: reactionState?.reactionSummary ?? {
+        LOVE: 0,
+        AMEN: 0,
+        WITH_YOU: 0,
+        PEACE: 0,
+        total: post.reactionCount,
+      },
+      viewerReaction: reactionState?.viewerReaction ?? null,
+      commentCount: post.commentCount,
+      publishedAt: (post.publishedAt ?? post.createdAt).toISOString(),
+    };
   }
 
   private encodeCursor(publishedAt?: Date, id?: string): string | null {

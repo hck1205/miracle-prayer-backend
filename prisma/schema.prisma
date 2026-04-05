@@ -13,6 +13,7 @@ enum ContentVisibility {
 }
 
 enum PostStatus {
+  DRAFT
   PUBLISHED
   ARCHIVED
   DELETED
@@ -67,7 +68,7 @@ model Post {
   body          String            @db.Text
   reactionCount Int               @default(0) @map("reaction_count")
   commentCount  Int               @default(0) @map("comment_count")
-  publishedAt   DateTime          @default(now()) @map("published_at")
+  publishedAt   DateTime?         @map("published_at")
   createdAt     DateTime          @default(now()) @map("created_at")
   updatedAt     DateTime          @updatedAt @map("updated_at")
   deletedAt     DateTime?         @map("deleted_at")
@@ -76,6 +77,7 @@ model Post {
   comments      Comment[]
 
   @@index([authorId, createdAt(sort: Desc)])
+  @@index([authorId, status, updatedAt(sort: Desc)])
   @@index([status, publishedAt(sort: Desc)])
   @@index([status, publishedAt(sort: Desc), id(sort: Desc)])
   @@index([visibility, status, publishedAt(sort: Desc)])

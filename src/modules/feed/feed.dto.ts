@@ -1,6 +1,13 @@
 import { Type } from "class-transformer";
-import { ReactionType } from "@prisma/client";
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { ContentVisibility, PostStatus, ReactionType } from "@prisma/client";
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from "class-validator";
 
 export class GetFeedQueryDto {
   @IsOptional()
@@ -20,6 +27,29 @@ export class SetPostReactionDto {
   type!: ReactionType;
 }
 
+export class CreateFeedPostDto {
+  @IsString()
+  body = "";
+
+  @IsEnum(ContentVisibility)
+  visibility: ContentVisibility = ContentVisibility.PUBLIC;
+
+  @IsEnum(PostStatus)
+  status: PostStatus = PostStatus.PUBLISHED;
+}
+
+export class UpdateFeedPostDto {
+  @IsString()
+  body = "";
+
+  @IsEnum(ContentVisibility)
+  visibility: ContentVisibility = ContentVisibility.PUBLIC;
+
+  @IsOptional()
+  @IsEnum(PostStatus)
+  status?: PostStatus;
+}
+
 export interface FeedReactionSummaryDto {
   LOVE: number;
   AMEN: number;
@@ -32,6 +62,7 @@ export interface FeedItemDto {
   id: string;
   body: string;
   visibility: "PUBLIC" | "ANONYMOUS";
+  viewerCanEdit: boolean;
   authorLabel: string;
   authorType: "HUMAN" | "AI";
   reactionCount: number;
@@ -52,4 +83,35 @@ export interface FeedReactionStateDto {
   reactionCount: number;
   reactionSummary: FeedReactionSummaryDto;
   viewerReaction: ReactionType | null;
+}
+
+export interface CreatedFeedPostDto {
+  id: string;
+  body: string;
+  visibility: "PUBLIC" | "ANONYMOUS";
+  status: PostStatus;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
+export interface UpdatedFeedPostDto {
+  id: string;
+  body: string;
+  visibility: "PUBLIC" | "ANONYMOUS";
+  status: PostStatus;
+  updatedAt: string;
+  publishedAt: string | null;
+}
+
+export interface FeedDraftDto {
+  id: string;
+  body: string;
+  visibility: "PUBLIC" | "ANONYMOUS";
+  status: PostStatus;
+  updatedAt: string;
+  createdAt: string;
+}
+
+export interface LatestFeedDraftDto {
+  draft: FeedDraftDto | null;
 }

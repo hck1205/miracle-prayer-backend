@@ -1,5 +1,10 @@
 import { Injectable } from "@nestjs/common";
-import { PostStatus, Prisma, ReactionType } from "@prisma/client";
+import {
+  ContentVisibility,
+  PostStatus,
+  Prisma,
+  ReactionType,
+} from "@prisma/client";
 
 import { PrismaService } from "../../prisma/prisma.service";
 import type { FeedReactionSummaryDto, FeedReactionStateDto } from "./feed.dto";
@@ -28,6 +33,9 @@ export class FeedRepository {
   }) {
     const where: Prisma.PostWhereInput = {
       status: PostStatus.PUBLISHED,
+      publishedAt: {
+        not: null,
+      },
       ...(cursor == null
           ? {}
           : {
@@ -60,13 +68,16 @@ export class FeedRepository {
       take: limit + 1,
       select: {
         id: true,
+        authorId: true,
         body: true,
         visibility: true,
         reactionCount: true,
         commentCount: true,
         publishedAt: true,
+        createdAt: true,
         author: {
           select: {
+            email: true,
             name: true,
             userType: true,
           },
@@ -80,9 +91,54 @@ export class FeedRepository {
       where: {
         id: postId,
         status: PostStatus.PUBLISHED,
+        publishedAt: {
+          not: null,
+        },
       },
       select: {
         id: true,
+      },
+    });
+  }
+
+  async findOwnedEditablePostById(postId: string, userId: string) {
+    return this.prisma.post.findFirst({
+      where: {
+        id: postId,
+        authorId: userId,
+        status: {
+          in: [PostStatus.DRAFT, PostStatus.PUBLISHED],
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+        publishedAt: true,
+      },
+    });
+  }
+
+  async findLatestOwnedDraft(userId: string) {
+    return this.prisma.post.findFirst({
+      where: {
+        authorId: userId,
+        status: PostStatus.DRAFT,
+      },
+      orderBy: [
+        {
+          updatedAt: "desc",
+        },
+        {
+          id: "desc",
+        },
+      ],
+      select: {
+        id: true,
+        body: true,
+        visibility: true,
+        status: true,
+        updatedAt: true,
+        createdAt: true,
       },
     });
   }
@@ -152,6 +208,97 @@ export class FeedRepository {
     }
 
     return reactionStateMap;
+  }
+
+  async createPost({
+    authorId,
+    body,
+    visibility,
+    status,
+  }: {
+    authorId: string;
+    body: string;
+    visibility: ContentVisibility;
+    status: PostStatus;
+  }) {
+    return this.prisma.post.create({
+      data: {
+        authorId,
+        body,
+        visibility,
+        status,
+        publishedAt: status === PostStatus.PUBLISHED ? new Date() : null,
+      },
+      select: {
+        id: true,
+        body: true,
+        visibility: true,
+        status: true,
+        createdAt: true,
+        publishedAt: true,
+      },
+    });
+  }
+
+  async updateOwnedPost({
+    postId,
+    userId,
+    body,
+    visibility,
+    status,
+    publishedAt,
+  }: {
+    postId: string;
+    userId: string;
+    body: string;
+    visibility: ContentVisibility;
+    status?: PostStatus;
+    publishedAt?: Date | null;
+  }) {
+    await this.prisma.post.updateMany({
+      where: {
+        id: postId,
+        authorId: userId,
+        status: {
+          in: [PostStatus.DRAFT, PostStatus.PUBLISHED],
+        },
+      },
+      data: {
+        body,
+        visibility,
+        ...(status == null ? {} : { status }),
+        ...(publishedAt === undefined ? {} : { publishedAt }),
+      },
+    });
+
+    return this.prisma.post.findUniqueOrThrow({
+      where: {
+        id: postId,
+      },
+      select: {
+        id: true,
+        body: true,
+        visibility: true,
+        status: true,
+        updatedAt: true,
+        publishedAt: true,
+      },
+    });
+  }
+
+  async archiveOwnedDraft(postId: string, userId: string) {
+    const result = await this.prisma.post.updateMany({
+      where: {
+        id: postId,
+        authorId: userId,
+        status: PostStatus.DRAFT,
+      },
+      data: {
+        status: PostStatus.ARCHIVED,
+      },
+    });
+
+    return result.count > 0;
   }
 
   async setPostReaction(
