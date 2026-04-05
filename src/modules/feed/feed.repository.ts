@@ -302,6 +302,25 @@ export class FeedRepository {
     return result.count > 0;
   }
 
+  async archiveOwnedPost(postId: string, userId: string) {
+    const result = await this.prisma.post.updateMany({
+      where: {
+        id: postId,
+        authorId: userId,
+        status: {
+          in: EDITABLE_POST_STATUSES,
+        },
+      },
+      data: {
+        status: PostStatus.ARCHIVED,
+        publishedAt: null,
+        deletedAt: new Date(),
+      },
+    });
+
+    return result.count > 0;
+  }
+
   async setPostReaction(
     postId: string,
     userId: string,

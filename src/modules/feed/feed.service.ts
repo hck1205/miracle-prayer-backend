@@ -133,6 +133,14 @@ export class FeedService {
     }
   }
 
+  async deletePost(postId: string, userId: string): Promise<void> {
+    const deleted = await this.feedRepository.archiveOwnedPost(postId, userId);
+
+    if (!deleted) {
+      throw new NotFoundException("Post not found.");
+    }
+  }
+
   async setPostReaction(
     postId: string,
     userId: string,

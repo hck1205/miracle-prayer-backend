@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 
 import type {
   CreatedFeedPostDto,
@@ -64,6 +74,15 @@ export class FeedController {
     @Param("postId") postId: string,
   ): Promise<void> {
     await this.feedService.discardDraft(postId, user.sub);
+  }
+
+  @Delete(":postId")
+  @HttpCode(204)
+  async deletePost(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param("postId") postId: string,
+  ): Promise<void> {
+    await this.feedService.deletePost(postId, user.sub);
   }
 
   @Post(":postId/reactions")
