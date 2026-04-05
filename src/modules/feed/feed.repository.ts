@@ -16,6 +16,7 @@ const EMPTY_REACTION_SUMMARY: FeedReactionSummaryDto = {
   PEACE: 0,
   total: 0,
 };
+const EDITABLE_POST_STATUSES = [PostStatus.DRAFT, PostStatus.PUBLISHED];
 
 @Injectable()
 export class FeedRepository {
@@ -107,7 +108,7 @@ export class FeedRepository {
         id: postId,
         authorId: userId,
         status: {
-          in: [PostStatus.DRAFT, PostStatus.PUBLISHED],
+          in: EDITABLE_POST_STATUSES,
         },
       },
       select: {
@@ -182,7 +183,7 @@ export class FeedRepository {
       reactionStateMap.set(post.id, {
         postId: post.id,
         reactionCount: post.reactionCount,
-        reactionSummary: { ...EMPTY_REACTION_SUMMARY, total: post.reactionCount },
+        reactionSummary: this.createReactionSummary(post.reactionCount),
         viewerReaction: null,
       });
     }
@@ -260,7 +261,7 @@ export class FeedRepository {
         id: postId,
         authorId: userId,
         status: {
-          in: [PostStatus.DRAFT, PostStatus.PUBLISHED],
+          in: EDITABLE_POST_STATUSES,
         },
       },
       data: {
@@ -378,10 +379,7 @@ export class FeedRepository {
         }),
       ]);
 
-      const reactionSummary: FeedReactionSummaryDto = {
-        ...EMPTY_REACTION_SUMMARY,
-        total: post.reactionCount,
-      };
+      const reactionSummary = this.createReactionSummary(post.reactionCount);
 
       for (const row of groupedCounts) {
         const count =
@@ -398,5 +396,12 @@ export class FeedRepository {
         viewerReaction,
       };
     });
+  }
+
+  private createReactionSummary(total: number): FeedReactionSummaryDto {
+    return {
+      ...EMPTY_REACTION_SUMMARY,
+      total,
+    };
   }
 }

@@ -17,6 +17,8 @@ export interface AccessTokenPayload {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
+  private accessTokenSecret?: string;
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
@@ -44,7 +46,7 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       request.user = await this.jwtService.verifyAsync<AccessTokenPayload>(token, {
-        secret: this.configService.get<string>(AUTH_ENV_KEYS.accessSecret),
+        secret: this.getAccessTokenSecret(),
       });
     } catch (error) {
       if (error instanceof TokenExpiredError) {
@@ -55,5 +57,16 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  private getAccessTokenSecret(): string {
+    this.accessTokenSecret ??=
+      this.configService.get<string>(AUTH_ENV_KEYS.accessSecret) ?? "";
+
+    if (!this.accessTokenSecret) {
+      throw new Error(`${AUTH_ENV_KEYS.accessSecret} must be configured.`);
+    }
+
+    return this.accessTokenSecret;
   }
 }

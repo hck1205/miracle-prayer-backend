@@ -6,11 +6,13 @@ import { AUTH_ENV_KEYS } from "./modules/auth/auth.constants";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
-  const allowedOrigins = (process.env[AUTH_ENV_KEYS.frontendOrigins] ??
-    "http://localhost:5173,http://127.0.0.1:5173")
-    .split(",")
-    .map((origin: string) => origin.trim())
-    .filter((origin: string) => origin.length > 0);
+  const allowedOrigins = new Set(
+    (process.env[AUTH_ENV_KEYS.frontendOrigins] ??
+      "http://localhost:5173,http://127.0.0.1:5173")
+      .split(",")
+      .map((origin: string) => origin.trim())
+      .filter((origin: string) => origin.length > 0),
+  );
   const localhostOriginPattern = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
   app.setGlobalPrefix("api");
@@ -21,7 +23,7 @@ async function bootstrap(): Promise<void> {
     ) => {
       if (
         origin === undefined ||
-        allowedOrigins.includes(origin) ||
+        allowedOrigins.has(origin) ||
         localhostOriginPattern.test(origin)
       ) {
         callback(null, true);

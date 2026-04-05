@@ -21,6 +21,10 @@ interface RefreshTokenPayload {
 
 @Injectable()
 export class AuthService {
+  private accessTokenExpiresInSeconds?: number;
+  private refreshTokenExpiresInSeconds?: number;
+  private refreshTokenSecret?: string;
+
   constructor(
     private readonly authRepository: AuthRepository,
     private readonly googleAuthClient: GoogleAuthClient,
@@ -48,11 +52,7 @@ export class AuthService {
    */
   async rotateRefreshToken(refreshToken: string): Promise<AuthTokens> {
     const payload = await this.verifyRefreshToken(refreshToken);
-    const user = await this.authRepository.findUserById(payload.sub);
-
-    if (!user) {
-      throw new UnauthorizedException("Authenticated user was not found.");
-    }
+    const user = await this.getRequiredUser(payload.sub);
 
     if (!user.refreshTokenHash || !user.refreshTokenExpiresAt) {
       throw new UnauthorizedException("Refresh token session does not exist.");
@@ -89,13 +89,7 @@ export class AuthService {
    * Returns the current authenticated user profile.
    */
   async getCurrentUser(userId: string): Promise<AuthenticatedUser> {
-    const user = await this.authRepository.findUserById(userId);
-
-    if (!user) {
-      throw new UnauthorizedException("Authenticated user was not found.");
-    }
-
-    return this.toAuthenticatedUser(user);
+    return this.toAuthenticatedUser(await this.getRequiredUser(userId));
   }
 
   private createAccessTokenPayload(user: {
@@ -125,7 +119,14 @@ export class AuthService {
     email: string;
     name: string | null;
   }): Promise<AuthTokens> {
-    const accessToken = await this.jwtService.signAsync(this.createAccessTokenPayload(user));
+    const accessTokenExpiresInSeconds = this.getAccessTokenExpiresInSeconds();
+    const refreshTokenExpiresInSeconds = this.getRefreshTokenExpiresInSeconds();
+    const refreshTokenSecret = this.getRefreshTokenSecret();
+    // Token config is process-level configuration, so reading and parsing it
+    // once per issuance avoids repeated config churn on hot auth paths.
+    const accessToken = await this.jwtService.signAsync(
+      this.createAccessTokenPayload(user),
+    );
     const refreshToken = await this.jwtService.signAsync(
       {
         sub: user.id,
@@ -133,8 +134,8 @@ export class AuthService {
         jti: randomUUID(),
       } satisfies RefreshTokenPayload,
       {
-        secret: this.getRefreshTokenSecret(),
-        expiresIn: this.getRefreshTokenExpiresInSeconds(),
+        secret: refreshTokenSecret,
+        expiresIn: refreshTokenExpiresInSeconds,
       },
     );
 
@@ -142,16 +143,16 @@ export class AuthService {
       userId: user.id,
       refreshTokenHash: this.hashToken(refreshToken),
       refreshTokenExpiresAt: new Date(
-        Date.now() + this.getRefreshTokenExpiresInSeconds() * 1000,
+        Date.now() + refreshTokenExpiresInSeconds * 1000,
       ),
     });
 
     return {
       accessToken,
       tokenType: AUTH_TOKEN_TYPES.bearer,
-      expiresIn: this.getAccessTokenExpiresInSeconds(),
+      expiresIn: accessTokenExpiresInSeconds,
       refreshToken,
-      refreshExpiresIn: this.getRefreshTokenExpiresInSeconds(),
+      refreshExpiresIn: refreshTokenExpiresInSeconds,
     };
   }
 
@@ -171,43 +172,60 @@ export class AuthService {
     return createHash("sha256").update(token).digest("hex");
   }
 
-  private getAccessTokenExpiresInSeconds(): number {
-    const rawExpiresIn =
-      this.configService.get<string>(AUTH_ENV_KEYS.accessExpiresIn) ??
-      AUTH_TOKEN_DEFAULTS.accessExpiresInSeconds;
-    const expiresIn = Number(rawExpiresIn);
+  private async getRequiredUser(userId: string): Promise<{
+    id: string;
+    email: string;
+    name: string | null;
+    refreshTokenHash: string | null;
+    refreshTokenExpiresAt: Date | null;
+  }> {
+    const user = await this.authRepository.findUserById(userId);
 
-    if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
-      throw new Error(
-        `${AUTH_ENV_KEYS.accessExpiresIn} must be a positive number in seconds.`,
-      );
+    if (!user) {
+      throw new UnauthorizedException("Authenticated user was not found.");
     }
 
-    return expiresIn;
+    return user;
+  }
+
+  private getAccessTokenExpiresInSeconds(): number {
+    this.accessTokenExpiresInSeconds ??= this.getPositiveConfigNumber(
+      AUTH_ENV_KEYS.accessExpiresIn,
+      AUTH_TOKEN_DEFAULTS.accessExpiresInSeconds,
+    );
+    return this.accessTokenExpiresInSeconds;
   }
 
   private getRefreshTokenSecret(): string {
-    const secret = this.configService.get<string>(AUTH_ENV_KEYS.refreshSecret);
+    this.refreshTokenSecret ??=
+      this.configService.get<string>(AUTH_ENV_KEYS.refreshSecret) ?? "";
 
-    if (!secret) {
+    if (!this.refreshTokenSecret) {
       throw new Error(`${AUTH_ENV_KEYS.refreshSecret} must be configured.`);
     }
 
-    return secret;
+    return this.refreshTokenSecret;
   }
 
   private getRefreshTokenExpiresInSeconds(): number {
-    const rawExpiresIn =
-      this.configService.get<string>(AUTH_ENV_KEYS.refreshExpiresIn) ??
-      AUTH_TOKEN_DEFAULTS.refreshExpiresInSeconds;
-    const expiresIn = Number(rawExpiresIn);
+    this.refreshTokenExpiresInSeconds ??= this.getPositiveConfigNumber(
+      AUTH_ENV_KEYS.refreshExpiresIn,
+      AUTH_TOKEN_DEFAULTS.refreshExpiresInSeconds,
+    );
+    return this.refreshTokenExpiresInSeconds;
+  }
 
-    if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
-      throw new Error(
-        `${AUTH_ENV_KEYS.refreshExpiresIn} must be a positive number in seconds.`,
-      );
+  private getPositiveConfigNumber(
+    key: string,
+    fallback: string | number,
+  ): number {
+    const rawValue = this.configService.get<string>(key) ?? fallback;
+    const parsedValue = Number(rawValue);
+
+    if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+      throw new Error(`${key} must be a positive number in seconds.`);
     }
 
-    return expiresIn;
+    return parsedValue;
   }
 }

@@ -15,11 +15,11 @@ import { FeedRepository } from "./feed.repository";
 
 @Injectable()
 export class FeedService {
-  static readonly creatableStatuses = new Set<PostStatus>([
+  private static readonly editableStatuses = new Set<PostStatus>([
     PostStatus.DRAFT,
     PostStatus.PUBLISHED,
   ]);
-  static readonly updatableStatuses = new Set<PostStatus>([
+  static readonly creatableStatuses = new Set<PostStatus>([
     PostStatus.DRAFT,
     PostStatus.PUBLISHED,
   ]);
@@ -36,6 +36,8 @@ export class FeedService {
     userId: string;
   }): Promise<FeedResponseDto> {
     const decodedCursor = this.decodeCursor(cursor);
+    // We ask the repository for one extra row so the service can answer
+    // `hasMore` without issuing a separate count query.
     const posts = await this.feedRepository.findPublishedFeed({
       limit,
       cursor: decodedCursor,
@@ -66,15 +68,12 @@ export class FeedService {
     userId: string,
     input: CreateFeedPostDto,
   ): Promise<CreatedFeedPostDto> {
-    const body = input.body.trim();
-
-    if (body.length === 0) {
-      throw new BadRequestException("Prayer body is required.");
-    }
-
-    if (!FeedService.creatableStatuses.has(input.status)) {
-      throw new BadRequestException("Only draft and published posts can be created.");
-    }
+    const body = this.normalizeRequiredBody(input.body);
+    this.ensureStatusAllowed(
+      input.status,
+      FeedService.creatableStatuses,
+      "created",
+    );
 
     const createdPost = await this.feedRepository.createPost({
       authorId: userId,
@@ -83,31 +82,14 @@ export class FeedService {
       status: input.status,
     });
 
-    return {
-      id: createdPost.id,
-      body: createdPost.body,
-      visibility: createdPost.visibility,
-      status: createdPost.status,
-      createdAt: createdPost.createdAt.toISOString(),
-      publishedAt: createdPost.publishedAt?.toISOString() ?? null,
-    };
+    return this.toCreatedFeedPostDto(createdPost);
   }
 
   async getLatestDraft(userId: string): Promise<LatestFeedDraftDto> {
     const draft = await this.feedRepository.findLatestOwnedDraft(userId);
 
     return {
-      draft:
-        draft == null
-            ? null
-            : {
-                id: draft.id,
-                body: draft.body,
-                visibility: draft.visibility,
-                status: draft.status,
-                updatedAt: draft.updatedAt.toISOString(),
-                createdAt: draft.createdAt.toISOString(),
-              },
+      draft: draft == null ? null : this.toLatestFeedDraftDto(draft),
     };
   }
 
@@ -116,15 +98,8 @@ export class FeedService {
     userId: string,
     input: UpdateFeedPostDto,
   ): Promise<UpdatedFeedPostDto> {
-    const body = input.body.trim();
-
-    if (body.length === 0) {
-      throw new BadRequestException("Prayer body is required.");
-    }
-
-    if (input.status != null && !FeedService.updatableStatuses.has(input.status)) {
-      throw new BadRequestException("Only draft and published posts can be updated.");
-    }
+    const body = this.normalizeRequiredBody(input.body);
+    this.ensureOptionalStatusAllowed(input.status, "updated");
 
     const existingPost = await this.feedRepository.findOwnedEditablePostById(
       postId,
@@ -136,10 +111,7 @@ export class FeedService {
     }
 
     const nextStatus = input.status ?? existingPost.status;
-    const nextPublishedAt =
-      nextStatus === PostStatus.DRAFT
-        ? null
-        : existingPost.publishedAt ?? new Date();
+    const nextPublishedAt = this.resolvePublishedAt(existingPost, nextStatus);
 
     const updatedPost = await this.feedRepository.updateOwnedPost({
       postId,
@@ -150,14 +122,7 @@ export class FeedService {
       publishedAt: nextPublishedAt,
     });
 
-    return {
-      id: updatedPost.id,
-      body: updatedPost.body,
-      visibility: updatedPost.visibility,
-      status: updatedPost.status,
-      updatedAt: updatedPost.updatedAt.toISOString(),
-      publishedAt: updatedPost.publishedAt?.toISOString() ?? null,
-    };
+    return this.toUpdatedFeedPostDto(updatedPost);
   }
 
   async discardDraft(postId: string, userId: string): Promise<void> {
@@ -180,6 +145,110 @@ export class FeedService {
     }
 
     return this.feedRepository.setPostReaction(postId, userId, type);
+  }
+
+  private normalizeRequiredBody(body: string): string {
+    const normalizedBody = body.trim();
+
+    if (normalizedBody.length === 0) {
+      throw new BadRequestException("Prayer body is required.");
+    }
+
+    return normalizedBody;
+  }
+
+  private ensureStatusAllowed(
+    status: PostStatus,
+    allowedStatuses: ReadonlySet<PostStatus>,
+    action: "created" | "updated",
+  ): void {
+    if (allowedStatuses.has(status)) {
+      return;
+    }
+
+    throw new BadRequestException(
+      `Only draft and published posts can be ${action}.`,
+    );
+  }
+
+  private ensureOptionalStatusAllowed(
+    status: PostStatus | undefined,
+    action: "created" | "updated",
+  ): void {
+    if (status == null) {
+      return;
+    }
+
+    this.ensureStatusAllowed(status, FeedService.editableStatuses, action);
+  }
+
+  private resolvePublishedAt(
+    existingPost: {
+      publishedAt: Date | null;
+    },
+    nextStatus: PostStatus,
+  ): Date | null {
+    // A published post should keep its first publish time. Drafts explicitly
+    // clear the field so cursor ordering only includes visible feed items.
+    if (nextStatus === PostStatus.DRAFT) {
+      return null;
+    }
+
+    return existingPost.publishedAt ?? new Date();
+  }
+
+  private toCreatedFeedPostDto(post: {
+    id: string;
+    body: string;
+    visibility: "PUBLIC" | "ANONYMOUS";
+    status: PostStatus;
+    createdAt: Date;
+    publishedAt: Date | null;
+  }): CreatedFeedPostDto {
+    return {
+      id: post.id,
+      body: post.body,
+      visibility: post.visibility,
+      status: post.status,
+      createdAt: post.createdAt.toISOString(),
+      publishedAt: post.publishedAt?.toISOString() ?? null,
+    };
+  }
+
+  private toLatestFeedDraftDto(draft: {
+    id: string;
+    body: string;
+    visibility: "PUBLIC" | "ANONYMOUS";
+    status: PostStatus;
+    updatedAt: Date;
+    createdAt: Date;
+  }): NonNullable<LatestFeedDraftDto["draft"]> {
+    return {
+      id: draft.id,
+      body: draft.body,
+      visibility: draft.visibility,
+      status: draft.status,
+      updatedAt: draft.updatedAt.toISOString(),
+      createdAt: draft.createdAt.toISOString(),
+    };
+  }
+
+  private toUpdatedFeedPostDto(post: {
+    id: string;
+    body: string;
+    visibility: "PUBLIC" | "ANONYMOUS";
+    status: PostStatus;
+    updatedAt: Date;
+    publishedAt: Date | null;
+  }): UpdatedFeedPostDto {
+    return {
+      id: post.id,
+      body: post.body,
+      visibility: post.visibility,
+      status: post.status,
+      updatedAt: post.updatedAt.toISOString(),
+      publishedAt: post.publishedAt?.toISOString() ?? null,
+    };
   }
 
   private toFeedItemDto(

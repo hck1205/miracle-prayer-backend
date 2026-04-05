@@ -13,6 +13,7 @@ export interface VerifiedGoogleUser {
 @Injectable()
 export class GoogleAuthClient {
   private readonly oauthClient = new OAuth2Client();
+  private allowedClientIds?: string[];
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -39,6 +40,10 @@ export class GoogleAuthClient {
   }
 
   private getAllowedClientIds(): string[] {
+    if (this.allowedClientIds != null) {
+      return this.allowedClientIds;
+    }
+
     const rawClientIds = this.configService.get<string>(AUTH_ENV_KEYS.googleClientIds);
     const clientIds = rawClientIds
       ?.split(",")
@@ -49,6 +54,9 @@ export class GoogleAuthClient {
       throw new Error(`${AUTH_ENV_KEYS.googleClientIds} must be configured.`);
     }
 
-    return clientIds;
+    // OAuth audiences are static configuration for the lifetime of the
+    // process, so we parse them once and reuse the result for each login.
+    this.allowedClientIds = clientIds;
+    return this.allowedClientIds;
   }
 }
