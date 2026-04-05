@@ -17,7 +17,11 @@ export class FeedController {
     @CurrentUser() user: AccessTokenPayload,
     @Query() query: GetFeedQueryDto,
   ): Promise<FeedResponseDto> {
-    return this.feedService.getFeed(query.limit, user.sub);
+    return this.feedService.getFeed({
+      limit: query.limit,
+      cursor: query.cursor,
+      userId: user.sub,
+    });
   }
 
   @Post(":postId/reactions")

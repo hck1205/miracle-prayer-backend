@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { PostStatus, ReactionType } from "@prisma/client";
+import { PostStatus, Prisma, ReactionType } from "@prisma/client";
 
 import { PrismaService } from "../../prisma/prisma.service";
 import type { FeedReactionSummaryDto, FeedReactionStateDto } from "./feed.dto";
@@ -16,15 +16,48 @@ const EMPTY_REACTION_SUMMARY: FeedReactionSummaryDto = {
 export class FeedRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findPublishedFeed(limit: number) {
+  async findPublishedFeed({
+    limit,
+    cursor,
+  }: {
+    limit: number;
+    cursor?: {
+      publishedAt: Date;
+      id: string;
+    };
+  }) {
+    const where: Prisma.PostWhereInput = {
+      status: PostStatus.PUBLISHED,
+      ...(cursor == null
+          ? {}
+          : {
+              OR: [
+                {
+                  publishedAt: {
+                    lt: cursor.publishedAt,
+                  },
+                },
+                {
+                  publishedAt: cursor.publishedAt,
+                  id: {
+                    lt: cursor.id,
+                  },
+                },
+              ],
+            }),
+    };
+
     return this.prisma.post.findMany({
-      where: {
-        status: PostStatus.PUBLISHED,
-      },
-      orderBy: {
-        publishedAt: "desc",
-      },
-      take: limit,
+      where,
+      orderBy: [
+        {
+          publishedAt: "desc",
+        },
+        {
+          id: "desc",
+        },
+      ],
+      take: limit + 1,
       select: {
         id: true,
         body: true,
@@ -55,14 +88,16 @@ export class FeedRepository {
   }
 
   async getFeedReactionStates(
-    postIds: string[],
+    posts: Array<{ id: string; reactionCount: number }>,
     userId: string,
   ): Promise<Map<string, FeedReactionStateDto>> {
-    if (postIds.length == 0) {
+    if (posts.length == 0) {
       return new Map<string, FeedReactionStateDto>();
     }
 
-    const [groupedCounts, viewerReactions, posts] = await this.prisma.$transaction([
+    const postIds = posts.map((post) => post.id);
+
+    const [groupedCounts, viewerReactions] = await this.prisma.$transaction([
       this.prisma.postReaction.groupBy({
         by: ["postId", "type"],
         orderBy: [{ postId: "asc" }, { type: "asc" }],
@@ -81,15 +116,6 @@ export class FeedRepository {
         select: {
           postId: true,
           type: true,
-        },
-      }),
-      this.prisma.post.findMany({
-        where: {
-          id: { in: postIds },
-        },
-        select: {
-          id: true,
-          reactionCount: true,
         },
       }),
     ]);
