@@ -1,11 +1,18 @@
 import { Type } from "class-transformer";
-import { ContentVisibility, PostStatus, ReactionType } from "@prisma/client";
+import {
+  ContentVisibility,
+  PostReportReason,
+  PostStatus,
+  ReactionType,
+} from "@prisma/client";
 import {
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
 } from "class-validator";
 
@@ -25,6 +32,17 @@ export class GetFeedQueryDto {
 export class SetPostReactionDto {
   @IsEnum(ReactionType)
   type!: ReactionType;
+}
+
+export class ReportFeedPostDto {
+  @IsEnum(PostReportReason)
+  reason!: PostReportReason;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  details?: string;
 }
 
 export class CreateFeedPostDto {

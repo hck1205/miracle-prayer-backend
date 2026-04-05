@@ -36,6 +36,13 @@ enum ReactionType {
   PEACE
 }
 
+enum PostReportReason {
+  NOT_A_PRAYER
+  ABUSIVE_OR_HARASSING
+  PROMOTIONAL_OR_OFF_TOPIC
+  OTHER
+}
+
 enum UserType {
   HUMAN
   AI
@@ -52,6 +59,7 @@ model User {
   createdAt             DateTime          @default(now()) @map("created_at")
   updatedAt             DateTime          @updatedAt @map("updated_at")
   posts                 Post[]            @relation("UserPosts")
+  reportedPosts         PostReport[]      @relation("UserPostReports")
   comments              Comment[]         @relation("UserComments")
   postReactions         PostReaction[]
   commentReactions      CommentReaction[]
@@ -74,6 +82,7 @@ model Post {
   deletedAt     DateTime?         @map("deleted_at")
   author        User              @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade)
   reactions     PostReaction[]
+  reports       PostReport[]
   comments      Comment[]
 
   @@index([authorId, createdAt(sort: Desc)])
@@ -82,6 +91,23 @@ model Post {
   @@index([status, publishedAt(sort: Desc), id(sort: Desc)])
   @@index([visibility, status, publishedAt(sort: Desc)])
   @@map("posts")
+}
+
+model PostReport {
+  id         String           @id @default(uuid())
+  postId      String          @map("post_id")
+  reporterId  String          @map("reporter_id")
+  reason      PostReportReason
+  details     String?         @db.Text
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+  post        Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reporter    User            @relation("UserPostReports", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, reporterId], map: "post_reports_post_id_reporter_id_key")
+  @@index([postId, createdAt(sort: Desc)])
+  @@index([reporterId, createdAt(sort: Desc)])
+  @@map("post_reports")
 }
 
 model PostReaction {

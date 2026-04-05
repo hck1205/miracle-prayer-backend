@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { PostStatus, ReactionType } from "@prisma/client";
+import { PostReportReason, PostStatus, ReactionType } from "@prisma/client";
 
 import type {
   CreatedFeedPostDto,
@@ -15,6 +15,7 @@ import { FeedRepository } from "./feed.repository";
 
 @Injectable()
 export class FeedService {
+  private static readonly publishedEditWindowMs = 60 * 60 * 1000;
   private static readonly editableStatuses = new Set<PostStatus>([
     PostStatus.DRAFT,
     PostStatus.PUBLISHED,
@@ -110,6 +111,8 @@ export class FeedService {
       throw new NotFoundException("Editable post not found.");
     }
 
+    this.ensurePostIsStillEditable(existingPost);
+
     const nextStatus = input.status ?? existingPost.status;
     const nextPublishedAt = this.resolvePublishedAt(existingPost, nextStatus);
 
@@ -139,6 +142,45 @@ export class FeedService {
     if (!deleted) {
       throw new NotFoundException("Post not found.");
     }
+  }
+
+  async reportPost(
+    postId: string,
+    userId: string,
+    reason: PostReportReason,
+    details?: string,
+  ): Promise<void> {
+    const post = await this.feedRepository.findPublishedPostById(postId);
+
+    if (!post) {
+      throw new NotFoundException("Post not found.");
+    }
+
+    if (post.authorId === userId) {
+      throw new BadRequestException("You can't report your own prayer.");
+    }
+
+    const existingReport = await this.feedRepository.findPostReportByReporter(
+      postId,
+      userId,
+    );
+    if (existingReport != null) {
+      throw new BadRequestException("You already reported this prayer.");
+    }
+
+    const normalizedDetails = details?.trim();
+    if (reason === PostReportReason.OTHER && !normalizedDetails) {
+      throw new BadRequestException("Please tell us why you're reporting this post.");
+    }
+
+    await this.feedRepository.upsertPostReport({
+      postId,
+      reporterId: userId,
+      reason,
+      details: normalizedDetails != null && normalizedDetails.length > 0
+        ? normalizedDetails
+        : undefined,
+    });
   }
 
   async setPostReaction(
@@ -188,6 +230,28 @@ export class FeedService {
     }
 
     this.ensureStatusAllowed(status, FeedService.editableStatuses, action);
+  }
+
+  private ensurePostIsStillEditable(existingPost: {
+    status: PostStatus;
+    publishedAt: Date | null;
+  }): void {
+    if (existingPost.status !== PostStatus.PUBLISHED) {
+      return;
+    }
+
+    const publishedAt = existingPost.publishedAt;
+    if (publishedAt == null) {
+      return;
+    }
+
+    if (Date.now() - publishedAt.getTime() <= FeedService.publishedEditWindowMs) {
+      return;
+    }
+
+    throw new BadRequestException(
+      "You can only edit a prayer within 1 hour of posting it.",
+    );
   }
 
   private resolvePublishedAt(

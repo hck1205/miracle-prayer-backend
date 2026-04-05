@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import {
   ContentVisibility,
+  PostReportReason,
   PostStatus,
   Prisma,
   ReactionType,
@@ -98,6 +99,7 @@ export class FeedRepository {
       },
       select: {
         id: true,
+        authorId: true,
       },
     });
   }
@@ -319,6 +321,51 @@ export class FeedRepository {
     });
 
     return result.count > 0;
+  }
+
+  async findPostReportByReporter(postId: string, reporterId: string) {
+    return this.prisma.postReport.findUnique({
+      where: {
+        postId_reporterId: {
+          postId,
+          reporterId,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+  }
+
+  async upsertPostReport({
+    postId,
+    reporterId,
+    reason,
+    details,
+  }: {
+    postId: string;
+    reporterId: string;
+    reason: PostReportReason;
+    details?: string;
+  }): Promise<void> {
+    await this.prisma.postReport.upsert({
+      where: {
+        postId_reporterId: {
+          postId,
+          reporterId,
+        },
+      },
+      update: {
+        reason,
+        details,
+      },
+      create: {
+        postId,
+        reporterId,
+        reason,
+        details,
+      },
+    });
   }
 
   async setPostReaction(

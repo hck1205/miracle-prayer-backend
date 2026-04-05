@@ -20,6 +20,7 @@ import type {
 import {
   CreateFeedPostDto,
   GetFeedQueryDto,
+  ReportFeedPostDto,
   SetPostReactionDto,
   UpdateFeedPostDto,
 } from "./feed.dto";
@@ -83,6 +84,16 @@ export class FeedController {
     @Param("postId") postId: string,
   ): Promise<void> {
     await this.feedService.deletePost(postId, user.sub);
+  }
+
+  @Post(":postId/report")
+  @HttpCode(204)
+  async reportPost(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param("postId") postId: string,
+    @Body() body: ReportFeedPostDto,
+  ): Promise<void> {
+    await this.feedService.reportPost(postId, user.sub, body.reason, body.details);
   }
 
   @Post(":postId/reactions")
