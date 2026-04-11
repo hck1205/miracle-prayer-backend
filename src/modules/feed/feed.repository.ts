@@ -3,12 +3,17 @@ import {
   ContentVisibility,
   PostReportReason,
   PostStatus,
+  PostType,
   Prisma,
   ReactionType,
 } from "@prisma/client";
 
 import { PrismaService } from "../../prisma/prisma.service";
-import type { FeedReactionSummaryDto, FeedReactionStateDto } from "./feed.dto";
+import type {
+  FeedFavoriteStateDto,
+  FeedReactionSummaryDto,
+  FeedReactionStateDto,
+} from "./feed.dto";
 
 const EMPTY_REACTION_SUMMARY: FeedReactionSummaryDto = {
   LOVE: 0,
@@ -39,22 +44,22 @@ export class FeedRepository {
         not: null,
       },
       ...(cursor == null
-          ? {}
-          : {
-              OR: [
-                {
-                  publishedAt: {
-                    lt: cursor.publishedAt,
-                  },
+        ? {}
+        : {
+            OR: [
+              {
+                publishedAt: {
+                  lt: cursor.publishedAt,
                 },
-                {
-                  publishedAt: cursor.publishedAt,
-                  id: {
-                    lt: cursor.id,
-                  },
+              },
+              {
+                publishedAt: cursor.publishedAt,
+                id: {
+                  lt: cursor.id,
                 },
-              ],
-            }),
+              },
+            ],
+          }),
     };
 
     return this.prisma.post.findMany({
@@ -70,9 +75,127 @@ export class FeedRepository {
       take: limit + 1,
       select: {
         id: true,
+        postNumber: true,
         authorId: true,
         body: true,
         visibility: true,
+        type: true,
+        reactionCount: true,
+        commentCount: true,
+        publishedAt: true,
+        createdAt: true,
+        author: {
+          select: {
+            email: true,
+            name: true,
+            userType: true,
+          },
+        },
+      },
+    });
+  }
+
+  async findFavoritedFeed({
+    limit,
+    cursor,
+    userId,
+  }: {
+    limit: number;
+    cursor?: {
+      createdAt: Date;
+      id: string;
+    };
+    userId: string;
+  }) {
+    return this.prisma.postFavorite.findMany({
+      where: {
+        userId,
+        post: {
+          status: PostStatus.PUBLISHED,
+          publishedAt: {
+            not: null,
+          },
+        },
+        ...(cursor == null
+          ? {}
+          : {
+              OR: [
+                {
+                  createdAt: {
+                    lt: cursor.createdAt,
+                  },
+                },
+                {
+                  createdAt: cursor.createdAt,
+                  id: {
+                    lt: cursor.id,
+                  },
+                },
+              ],
+            }),
+      },
+      orderBy: [
+        {
+          createdAt: "desc",
+        },
+        {
+          id: "desc",
+        },
+      ],
+      take: limit + 1,
+      select: {
+        id: true,
+        createdAt: true,
+        post: {
+          select: {
+            id: true,
+            postNumber: true,
+            authorId: true,
+            body: true,
+            visibility: true,
+            type: true,
+            reactionCount: true,
+            commentCount: true,
+            publishedAt: true,
+            createdAt: true,
+            author: {
+              select: {
+                email: true,
+                name: true,
+                userType: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async findPublishedUrgentFeed(limit: number) {
+    return this.prisma.post.findMany({
+      where: {
+        status: PostStatus.PUBLISHED,
+        type: PostType.URGENT,
+        publishedAt: {
+          not: null,
+        },
+      },
+      orderBy: [
+        {
+          publishedAt: "desc",
+        },
+        {
+          id: "desc",
+        },
+      ],
+      take: limit,
+      select: {
+        id: true,
+        postNumber: true,
+        authorId: true,
+        body: true,
+        visibility: true,
+        type: true,
         reactionCount: true,
         commentCount: true,
         publishedAt: true,
@@ -117,6 +240,7 @@ export class FeedRepository {
         id: true,
         status: true,
         publishedAt: true,
+        type: true,
       },
     });
   }
@@ -140,6 +264,7 @@ export class FeedRepository {
         body: true,
         visibility: true,
         status: true,
+        type: true,
         updatedAt: true,
         createdAt: true,
       },
@@ -197,7 +322,9 @@ export class FeedRepository {
       }
 
       const count =
-        typeof row._count === "object" && row._count ? (row._count.type ?? 0) : 0;
+        typeof row._count === "object" && row._count
+          ? (row._count.type ?? 0)
+          : 0;
       existing.reactionSummary[row.type] = count;
     }
 
@@ -213,16 +340,49 @@ export class FeedRepository {
     return reactionStateMap;
   }
 
+  async getFeedFavoriteStates(
+    posts: Array<{ id: string }>,
+    userId: string,
+  ): Promise<Map<string, FeedFavoriteStateDto>> {
+    if (posts.length == 0) {
+      return new Map<string, FeedFavoriteStateDto>();
+    }
+
+    const favorites = await this.prisma.postFavorite.findMany({
+      where: {
+        postId: {
+          in: posts.map((post) => post.id),
+        },
+        userId,
+      },
+      select: {
+        postId: true,
+      },
+    });
+
+    return new Map<string, FeedFavoriteStateDto>(
+      favorites.map((favorite) => [
+        favorite.postId,
+        {
+          postId: favorite.postId,
+          viewerHasFavorited: true,
+        },
+      ]),
+    );
+  }
+
   async createPost({
     authorId,
     body,
     visibility,
     status,
+    type,
   }: {
     authorId: string;
     body: string;
     visibility: ContentVisibility;
     status: PostStatus;
+    type?: PostType | null;
   }) {
     return this.prisma.post.create({
       data: {
@@ -230,6 +390,7 @@ export class FeedRepository {
         body,
         visibility,
         status,
+        type,
         publishedAt: status === PostStatus.PUBLISHED ? new Date() : null,
       },
       select: {
@@ -237,6 +398,7 @@ export class FeedRepository {
         body: true,
         visibility: true,
         status: true,
+        type: true,
         createdAt: true,
         publishedAt: true,
       },
@@ -250,6 +412,7 @@ export class FeedRepository {
     visibility,
     status,
     publishedAt,
+    type,
   }: {
     postId: string;
     userId: string;
@@ -257,6 +420,7 @@ export class FeedRepository {
     visibility: ContentVisibility;
     status?: PostStatus;
     publishedAt?: Date | null;
+    type?: PostType | null;
   }) {
     await this.prisma.post.updateMany({
       where: {
@@ -271,6 +435,7 @@ export class FeedRepository {
         visibility,
         ...(status == null ? {} : { status }),
         ...(publishedAt === undefined ? {} : { publishedAt }),
+        ...(type === undefined ? {} : { type }),
       },
     });
 
@@ -283,6 +448,7 @@ export class FeedRepository {
         body: true,
         visibility: true,
         status: true,
+        type: true,
         updatedAt: true,
         publishedAt: true,
       },
@@ -333,6 +499,47 @@ export class FeedRepository {
       },
       select: {
         id: true,
+      },
+    });
+  }
+
+  async findMostRecentPublishedUrgentPostByAuthor({
+    userId,
+    since,
+    excludePostId,
+  }: {
+    userId: string;
+    since: Date;
+    excludePostId?: string;
+  }) {
+    return this.prisma.post.findFirst({
+      where: {
+        authorId: userId,
+        status: PostStatus.PUBLISHED,
+        type: PostType.URGENT,
+        publishedAt: {
+          not: null,
+          gte: since,
+        },
+        ...(excludePostId == null
+          ? {}
+          : {
+              id: {
+                not: excludePostId,
+              },
+            }),
+      },
+      orderBy: [
+        {
+          publishedAt: "desc",
+        },
+        {
+          id: "desc",
+        },
+      ],
+      select: {
+        id: true,
+        publishedAt: true,
       },
     });
   }
@@ -460,6 +667,50 @@ export class FeedRepository {
         reactionCount: post.reactionCount,
         reactionSummary,
         viewerReaction,
+      };
+    });
+  }
+
+  async togglePostFavorite(
+    postId: string,
+    userId: string,
+  ): Promise<FeedFavoriteStateDto> {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.postFavorite.findUnique({
+        where: {
+          postId_userId: {
+            postId,
+            userId,
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (existing) {
+        await tx.postFavorite.delete({
+          where: {
+            id: existing.id,
+          },
+        });
+
+        return {
+          postId,
+          viewerHasFavorited: false,
+        };
+      }
+
+      await tx.postFavorite.create({
+        data: {
+          postId,
+          userId,
+        },
+      });
+
+      return {
+        postId,
+        viewerHasFavorited: true,
       };
     });
   }

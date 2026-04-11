@@ -12,6 +12,8 @@ import {
 
 import type {
   CreatedFeedPostDto,
+  FeedFavoriteStateDto,
+  FeedUrgentEligibilityDto,
   FeedReactionStateDto,
   FeedResponseDto,
   LatestFeedDraftDto,
@@ -20,6 +22,7 @@ import type {
 import {
   CreateFeedPostDto,
   GetFeedQueryDto,
+  GetUrgentEligibilityQueryDto,
   ReportFeedPostDto,
   SetPostReactionDto,
   UpdateFeedPostDto,
@@ -46,6 +49,40 @@ export class FeedController {
     });
   }
 
+  @Get("favorites")
+  getFavorites(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() query: GetFeedQueryDto,
+  ): Promise<FeedResponseDto> {
+    return this.feedService.getFavorites({
+      limit: query.limit,
+      cursor: query.cursor,
+      userId: user.sub,
+    });
+  }
+
+  @Get("urgent")
+  getUrgentFeed(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() query: GetFeedQueryDto,
+  ): Promise<FeedResponseDto> {
+    return this.feedService.getUrgentFeed({
+      limit: query.limit,
+      userId: user.sub,
+    });
+  }
+
+  @Get("urgent-eligibility")
+  getUrgentEligibility(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() query: GetUrgentEligibilityQueryDto,
+  ): Promise<FeedUrgentEligibilityDto> {
+    return this.feedService.getUrgentEligibility({
+      userId: user.sub,
+      excludePostId: query.excludePostId,
+    });
+  }
+
   @Post()
   createPost(
     @CurrentUser() user: AccessTokenPayload,
@@ -55,7 +92,9 @@ export class FeedController {
   }
 
   @Get("drafts/latest")
-  getLatestDraft(@CurrentUser() user: AccessTokenPayload): Promise<LatestFeedDraftDto> {
+  getLatestDraft(
+    @CurrentUser() user: AccessTokenPayload,
+  ): Promise<LatestFeedDraftDto> {
     return this.feedService.getLatestDraft(user.sub);
   }
 
@@ -93,7 +132,12 @@ export class FeedController {
     @Param("postId") postId: string,
     @Body() body: ReportFeedPostDto,
   ): Promise<void> {
-    await this.feedService.reportPost(postId, user.sub, body.reason, body.details);
+    await this.feedService.reportPost(
+      postId,
+      user.sub,
+      body.reason,
+      body.details,
+    );
   }
 
   @Post(":postId/reactions")
@@ -103,5 +147,13 @@ export class FeedController {
     @Body() body: SetPostReactionDto,
   ): Promise<FeedReactionStateDto> {
     return this.feedService.setPostReaction(postId, user.sub, body.type);
+  }
+
+  @Post(":postId/favorite")
+  togglePostFavorite(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param("postId") postId: string,
+  ): Promise<FeedFavoriteStateDto> {
+    return this.feedService.togglePostFavorite(postId, user.sub);
   }
 }

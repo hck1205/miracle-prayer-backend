@@ -10,6 +10,8 @@ datasource db {
 enum ContentVisibility {
   PUBLIC
   ANONYMOUS
+
+  @@map("mp_app_content_visibility")
 }
 
 enum PostStatus {
@@ -17,16 +19,22 @@ enum PostStatus {
   PUBLISHED
   ARCHIVED
   DELETED
+
+  @@map("mp_app_post_status")
 }
 
 enum CommentStatus {
   PUBLISHED
   DELETED
+
+  @@map("mp_app_comment_status")
 }
 
 enum CommentPolicy {
   OPEN
   CLOSED
+
+  @@map("mp_app_comment_policy")
 }
 
 enum ReactionType {
@@ -34,6 +42,14 @@ enum ReactionType {
   AMEN
   WITH_YOU
   PEACE
+
+  @@map("mp_app_reaction_type")
+}
+
+enum PostType {
+  URGENT
+
+  @@map("mp_app_post_type")
 }
 
 enum PostReportReason {
@@ -41,17 +57,21 @@ enum PostReportReason {
   ABUSIVE_OR_HARASSING
   PROMOTIONAL_OR_OFF_TOPIC
   OTHER
+
+  @@map("mp_app_post_report_reason")
 }
 
 enum UserType {
   HUMAN
   AI
+
+  @@map("mp_app_user_type")
 }
 
 model User {
-  id                    String            @id @default(uuid())
-  email                 String            @unique
-  googleSubject         String?           @unique @map("google_subject")
+  id                    String            @id(map: "mp_app_users_pkey") @default(uuid())
+  email                 String            @unique(map: "mp_app_users_email_key")
+  googleSubject         String?           @unique(map: "mp_app_users_google_subject_key") @map("google_subject")
   name                  String?
   userType              UserType          @default(HUMAN) @map("user_type")
   refreshTokenHash      String?           @map("refresh_token_hash")
@@ -62,16 +82,19 @@ model User {
   reportedPosts         PostReport[]      @relation("UserPostReports")
   comments              Comment[]         @relation("UserComments")
   postReactions         PostReaction[]
+  postFavorites         PostFavorite[]
   commentReactions      CommentReaction[]
 
-  @@map("users")
+  @@map("mp_app_users")
 }
 
 model Post {
-  id            String            @id @default(uuid())
+  id            String            @id(map: "mp_app_posts_pkey") @default(uuid())
+  postNumber    Int               @unique(map: "mp_app_posts_post_number_key") @default(autoincrement()) @map("post_number")
   authorId      String            @map("author_id")
   visibility    ContentVisibility @default(PUBLIC)
   status        PostStatus        @default(PUBLISHED)
+  type          PostType?
   commentPolicy CommentPolicy     @default(OPEN) @map("comment_policy")
   body          String            @db.Text
   reactionCount Int               @default(0) @map("reaction_count")
@@ -80,53 +103,69 @@ model Post {
   createdAt     DateTime          @default(now()) @map("created_at")
   updatedAt     DateTime          @updatedAt @map("updated_at")
   deletedAt     DateTime?         @map("deleted_at")
-  author        User              @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade)
+  author        User              @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade, map: "mp_app_posts_author_id_fkey")
   reactions     PostReaction[]
+  favorites     PostFavorite[]
   reports       PostReport[]
   comments      Comment[]
 
-  @@index([authorId, createdAt(sort: Desc)])
-  @@index([authorId, status, updatedAt(sort: Desc)])
-  @@index([status, publishedAt(sort: Desc)])
-  @@index([status, publishedAt(sort: Desc), id(sort: Desc)])
-  @@index([visibility, status, publishedAt(sort: Desc)])
-  @@map("posts")
+  @@index([authorId, createdAt(sort: Desc)], map: "mp_app_posts_author_id_created_at_idx")
+  @@index([authorId, type, status, publishedAt(sort: Desc)], map: "mp_app_posts_author_id_type_status_published_at_idx")
+  @@index([authorId, status, updatedAt(sort: Desc)], map: "mp_app_posts_author_id_status_updated_at_idx")
+  @@index([status, publishedAt(sort: Desc)], map: "mp_app_posts_status_published_at_idx")
+  @@index([status, publishedAt(sort: Desc), id(sort: Desc)], map: "mp_app_posts_status_published_at_id_idx")
+  @@index([visibility, status, publishedAt(sort: Desc)], map: "mp_app_posts_visibility_status_published_at_idx")
+  @@map("mp_app_posts")
+}
+
+model PostFavorite {
+  id        String   @id(map: "mp_app_post_favorites_pkey") @default(uuid())
+  postId    String   @map("post_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade, map: "mp_app_post_favorites_post_id_fkey")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, map: "mp_app_post_favorites_user_id_fkey")
+
+  @@unique([postId, userId], map: "mp_app_post_favorites_post_id_user_id_key")
+  @@index([userId, createdAt(sort: Desc)], map: "mp_app_post_favorites_user_id_created_at_idx")
+  @@index([postId, createdAt(sort: Desc)], map: "mp_app_post_favorites_post_id_created_at_idx")
+  @@map("mp_app_post_favorites")
 }
 
 model PostReport {
-  id         String           @id @default(uuid())
-  postId      String          @map("post_id")
-  reporterId  String          @map("reporter_id")
-  reason      PostReportReason
-  details     String?         @db.Text
-  createdAt   DateTime        @default(now()) @map("created_at")
-  updatedAt   DateTime        @updatedAt @map("updated_at")
-  post        Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
-  reporter    User            @relation("UserPostReports", fields: [reporterId], references: [id], onDelete: Cascade)
+  id         String           @id(map: "mp_app_post_reports_pkey") @default(uuid())
+  postId     String           @map("post_id")
+  reporterId String           @map("reporter_id")
+  reason     PostReportReason
+  details    String?          @db.Text
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+  post       Post             @relation(fields: [postId], references: [id], onDelete: Cascade, map: "mp_app_post_reports_post_id_fkey")
+  reporter   User             @relation("UserPostReports", fields: [reporterId], references: [id], onDelete: Cascade, map: "mp_app_post_reports_reporter_id_fkey")
 
-  @@unique([postId, reporterId], map: "post_reports_post_id_reporter_id_key")
-  @@index([postId, createdAt(sort: Desc)])
-  @@index([reporterId, createdAt(sort: Desc)])
-  @@map("post_reports")
+  @@unique([postId, reporterId], map: "mp_app_post_reports_post_id_reporter_id_key")
+  @@index([postId, createdAt(sort: Desc)], map: "mp_app_post_reports_post_id_created_at_idx")
+  @@index([reporterId, createdAt(sort: Desc)], map: "mp_app_post_reports_reporter_id_created_at_idx")
+  @@map("mp_app_post_reports")
 }
 
 model PostReaction {
-  id        String       @id @default(uuid())
+  id        String       @id(map: "mp_app_post_reactions_pkey") @default(uuid())
   postId    String       @map("post_id")
   userId    String       @map("user_id")
   type      ReactionType
   createdAt DateTime     @default(now()) @map("created_at")
-  post      Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post         @relation(fields: [postId], references: [id], onDelete: Cascade, map: "mp_app_post_reactions_post_id_fkey")
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade, map: "mp_app_post_reactions_user_id_fkey")
 
-  @@unique([postId, userId], map: "post_reactions_post_id_user_id_key")
-  @@index([postId, type])
-  @@index([userId, createdAt(sort: Desc)])
-  @@map("post_reactions")
+  @@unique([postId, userId], map: "mp_app_post_reactions_post_id_user_id_key")
+  @@index([postId, type], map: "mp_app_post_reactions_post_id_type_idx")
+  @@index([userId, createdAt(sort: Desc)], map: "mp_app_post_reactions_user_id_created_at_idx")
+  @@map("mp_app_post_reactions")
 }
 
 model Comment {
-  id            String            @id @default(uuid())
+  id            String            @id(map: "mp_app_comments_pkey") @default(uuid())
   postId        String            @map("post_id")
   authorId      String            @map("author_id")
   parentId      String?           @map("parent_id")
@@ -140,32 +179,32 @@ model Comment {
   createdAt     DateTime          @default(now()) @map("created_at")
   updatedAt     DateTime          @updatedAt @map("updated_at")
   deletedAt     DateTime?         @map("deleted_at")
-  post          Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
-  author        User              @relation("UserComments", fields: [authorId], references: [id], onDelete: Cascade)
-  parent        Comment?          @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  post          Post              @relation(fields: [postId], references: [id], onDelete: Cascade, map: "mp_app_comments_post_id_fkey")
+  author        User              @relation("UserComments", fields: [authorId], references: [id], onDelete: Cascade, map: "mp_app_comments_author_id_fkey")
+  parent        Comment?          @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade, map: "mp_app_comments_parent_id_fkey")
   replies       Comment[]         @relation("CommentReplies")
-  rootComment   Comment?          @relation("CommentThreadRoot", fields: [rootCommentId], references: [id], onDelete: Cascade)
+  rootComment   Comment?          @relation("CommentThreadRoot", fields: [rootCommentId], references: [id], onDelete: Cascade, map: "mp_app_comments_root_comment_id_fkey")
   threadReplies Comment[]         @relation("CommentThreadRoot")
   reactions     CommentReaction[]
 
-  @@index([postId, createdAt(sort: Desc)])
-  @@index([postId, parentId, createdAt(sort: Desc)])
-  @@index([postId, rootCommentId, parentId, createdAt(sort: Desc)])
-  @@index([authorId, createdAt(sort: Desc)])
-  @@map("comments")
+  @@index([postId, createdAt(sort: Desc)], map: "mp_app_comments_post_id_created_at_idx")
+  @@index([postId, parentId, createdAt(sort: Desc)], map: "mp_app_comments_post_id_parent_id_created_at_idx")
+  @@index([postId, rootCommentId, parentId, createdAt(sort: Desc)], map: "mp_app_comments_post_root_parent_created_at_idx")
+  @@index([authorId, createdAt(sort: Desc)], map: "mp_app_comments_author_id_created_at_idx")
+  @@map("mp_app_comments")
 }
 
 model CommentReaction {
-  id        String       @id @default(uuid())
+  id        String       @id(map: "mp_app_comment_reactions_pkey") @default(uuid())
   commentId String       @map("comment_id")
   userId    String       @map("user_id")
   type      ReactionType
   createdAt DateTime     @default(now()) @map("created_at")
-  comment   Comment      @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment   Comment      @relation(fields: [commentId], references: [id], onDelete: Cascade, map: "mp_app_comment_reactions_comment_id_fkey")
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade, map: "mp_app_comment_reactions_user_id_fkey")
 
-  @@unique([commentId, userId], map: "comment_reactions_comment_id_user_id_key")
-  @@index([commentId, type])
-  @@index([userId, createdAt(sort: Desc)])
-  @@map("comment_reactions")
+  @@unique([commentId, userId], map: "mp_app_comment_reactions_comment_id_user_id_key")
+  @@index([commentId, type], map: "mp_app_comment_reactions_comment_id_type_idx")
+  @@index([userId, createdAt(sort: Desc)], map: "mp_app_comment_reactions_user_id_created_at_idx")
+  @@map("mp_app_comment_reactions")
 }

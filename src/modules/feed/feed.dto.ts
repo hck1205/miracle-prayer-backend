@@ -3,6 +3,7 @@ import {
   ContentVisibility,
   PostReportReason,
   PostStatus,
+  PostType,
   ReactionType,
 } from "@prisma/client";
 import {
@@ -14,6 +15,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from "class-validator";
 
 export class GetFeedQueryDto {
@@ -54,6 +56,11 @@ export class CreateFeedPostDto {
 
   @IsEnum(PostStatus)
   status: PostStatus = PostStatus.PUBLISHED;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsEnum(PostType)
+  type?: PostType | null;
 }
 
 export class UpdateFeedPostDto {
@@ -66,6 +73,17 @@ export class UpdateFeedPostDto {
   @IsOptional()
   @IsEnum(PostStatus)
   status?: PostStatus;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsEnum(PostType)
+  type?: PostType | null;
+}
+
+export class GetUrgentEligibilityQueryDto {
+  @IsOptional()
+  @IsString()
+  excludePostId?: string;
 }
 
 export interface FeedReactionSummaryDto {
@@ -78,9 +96,12 @@ export interface FeedReactionSummaryDto {
 
 export interface FeedItemDto {
   id: string;
+  postNumber: number;
   body: string;
   visibility: "PUBLIC" | "ANONYMOUS";
+  type: PostType | null;
   viewerCanEdit: boolean;
+  viewerHasFavorited: boolean;
   authorLabel: string;
   authorType: "HUMAN" | "AI";
   reactionCount: number;
@@ -103,11 +124,17 @@ export interface FeedReactionStateDto {
   viewerReaction: ReactionType | null;
 }
 
+export interface FeedFavoriteStateDto {
+  postId: string;
+  viewerHasFavorited: boolean;
+}
+
 export interface CreatedFeedPostDto {
   id: string;
   body: string;
   visibility: "PUBLIC" | "ANONYMOUS";
   status: PostStatus;
+  type: PostType | null;
   createdAt: string;
   publishedAt: string | null;
 }
@@ -117,6 +144,7 @@ export interface UpdatedFeedPostDto {
   body: string;
   visibility: "PUBLIC" | "ANONYMOUS";
   status: PostStatus;
+  type: PostType | null;
   updatedAt: string;
   publishedAt: string | null;
 }
@@ -126,10 +154,17 @@ export interface FeedDraftDto {
   body: string;
   visibility: "PUBLIC" | "ANONYMOUS";
   status: PostStatus;
+  type: PostType | null;
   updatedAt: string;
   createdAt: string;
 }
 
 export interface LatestFeedDraftDto {
   draft: FeedDraftDto | null;
+}
+
+export interface FeedUrgentEligibilityDto {
+  canUseUrgent: boolean;
+  cooldownSeconds: number;
+  nextAvailableAt: string | null;
 }
