@@ -26,6 +26,10 @@ import type {
 import { FEED_DEFAULTS, FEED_ENV_KEYS } from "./feed.constants";
 import { FeedRepository } from "./feed.repository";
 
+type FeedPostRecord = Awaited<
+  ReturnType<FeedRepository["findPublishedFeed"]>
+>[number];
+
 @Injectable()
 export class FeedService {
   private static readonly publishedEditWindowMs = 60 * 60 * 1000;
@@ -60,41 +64,19 @@ export class FeedService {
       limit,
       cursor: decodedCursor,
     });
-    const hasMore = posts.length > limit;
-    const pagePosts = hasMore ? posts.slice(0, limit) : posts;
-    const reactionStates = await this.feedRepository.getFeedReactionStates(
-      pagePosts.map((post) => ({
-        id: post.id,
-        reactionCount: post.reactionCount,
-      })),
-      userId,
-    );
-    const favoriteStates = await this.feedRepository.getFeedFavoriteStates(
-      pagePosts.map((post) => ({
-        id: post.id,
-      })),
-      userId,
-    );
-    const lastPost =
-      pagePosts.length > 0 ? pagePosts[pagePosts.length - 1] : undefined;
+    const page = this.slicePage(posts, limit);
 
-    return {
-      items: pagePosts.map<FeedItemDto>((post) =>
-        this.toFeedItemDto(
-          post,
-          userId,
-          reactionStates.get(post.id),
-          favoriteStates.get(post.id),
-        ),
-      ),
-      nextCursor: hasMore
+    return this.buildFeedResponseFromPosts({
+      posts: page.items,
+      userId,
+      hasMore: page.hasMore,
+      nextCursor: page.hasMore
         ? this.encodePublishedCursor(
-            lastPost?.publishedAt ?? lastPost?.createdAt,
-            lastPost?.id,
+            page.lastItem?.publishedAt ?? page.lastItem?.createdAt,
+            page.lastItem?.id,
           )
         : null,
-      hasMore,
-    };
+    });
   }
 
   async getFavorites({
@@ -112,44 +94,19 @@ export class FeedService {
       cursor: decodedCursor,
       userId,
     });
-    const hasMore = favorites.length > limit;
-    const pageFavorites = hasMore ? favorites.slice(0, limit) : favorites;
-    const posts = pageFavorites.map((favorite) => favorite.post);
-    const reactionStates = await this.feedRepository.getFeedReactionStates(
-      posts.map((post) => ({
-        id: post.id,
-        reactionCount: post.reactionCount,
-      })),
-      userId,
-    );
-    const favoriteStates = new Map<string, FeedFavoriteStateDto>(
-      posts.map((post) => [
-        post.id,
-        {
-          postId: post.id,
-          viewerHasFavorited: true,
-        },
-      ]),
-    );
-    const lastFavorite =
-      pageFavorites.length > 0
-        ? pageFavorites[pageFavorites.length - 1]
-        : undefined;
+    const page = this.slicePage(favorites, limit);
 
-    return {
-      items: posts.map<FeedItemDto>((post) =>
-        this.toFeedItemDto(
-          post,
-          userId,
-          reactionStates.get(post.id),
-          favoriteStates.get(post.id),
-        ),
+    return this.buildFeedResponseFromPosts({
+      posts: page.items.map((favorite) => favorite.post),
+      userId,
+      favoriteStates: this.createFavoritedStateMap(
+        page.items.map((favorite) => favorite.post),
       ),
-      nextCursor: hasMore
-        ? this.encodeFavoriteCursor(lastFavorite?.createdAt, lastFavorite?.id)
+      hasMore: page.hasMore,
+      nextCursor: page.hasMore
+        ? this.encodeFavoriteCursor(page.lastItem?.createdAt, page.lastItem?.id)
         : null,
-      hasMore,
-    };
+    });
   }
 
   async getUrgentFeed({
@@ -160,32 +117,12 @@ export class FeedService {
     userId: string;
   }): Promise<FeedResponseDto> {
     const posts = await this.feedRepository.findPublishedUrgentFeed(limit);
-    const reactionStates = await this.feedRepository.getFeedReactionStates(
-      posts.map((post) => ({
-        id: post.id,
-        reactionCount: post.reactionCount,
-      })),
+    return this.buildFeedResponseFromPosts({
+      posts,
       userId,
-    );
-    const favoriteStates = await this.feedRepository.getFeedFavoriteStates(
-      posts.map((post) => ({
-        id: post.id,
-      })),
-      userId,
-    );
-
-    return {
-      items: posts.map<FeedItemDto>((post) =>
-        this.toFeedItemDto(
-          post,
-          userId,
-          reactionStates.get(post.id),
-          favoriteStates.get(post.id),
-        ),
-      ),
       nextCursor: null,
       hasMore: false,
-    };
+    });
   }
 
   async createPost(
@@ -327,11 +264,7 @@ export class FeedService {
     reason: PostReportReason,
     details?: string,
   ): Promise<void> {
-    const post = await this.feedRepository.findPublishedPostById(postId);
-
-    if (!post) {
-      throw new NotFoundException("Post not found.");
-    }
+    const post = await this.getRequiredPublishedPost(postId);
 
     if (post.authorId === userId) {
       throw new BadRequestException("You can't report your own prayer.");
@@ -368,11 +301,7 @@ export class FeedService {
     userId: string,
     type: ReactionType,
   ): Promise<FeedReactionStateDto> {
-    const post = await this.feedRepository.findPublishedPostById(postId);
-
-    if (!post) {
-      throw new NotFoundException("Post not found.");
-    }
+    await this.getRequiredPublishedPost(postId);
 
     return this.feedRepository.setPostReaction(postId, userId, type);
   }
@@ -381,17 +310,114 @@ export class FeedService {
     postId: string,
     userId: string,
   ): Promise<FeedFavoriteStateDto> {
-    const post = await this.feedRepository.findPublishedPostById(postId);
-
-    if (!post) {
-      throw new NotFoundException("Post not found.");
-    }
+    const post = await this.getRequiredPublishedPost(postId);
 
     if (post.authorId === userId) {
       throw new BadRequestException("You can't favorite your own prayer.");
     }
 
     return this.feedRepository.togglePostFavorite(postId, userId);
+  }
+
+  // Feed, favorites, and urgent all share the same DTO shape, so the service
+  // resolves reaction/favorite viewer state once and reuses the same mapping.
+  private async buildFeedResponseFromPosts({
+    posts,
+    userId,
+    nextCursor,
+    hasMore,
+    favoriteStates,
+  }: {
+    posts: FeedPostRecord[];
+    userId: string;
+    nextCursor: string | null;
+    hasMore: boolean;
+    favoriteStates?: Map<string, FeedFavoriteStateDto>;
+  }): Promise<FeedResponseDto> {
+    const reactionStates = await this.feedRepository.getFeedReactionStates(
+      posts.map((post) => ({
+        id: post.id,
+        reactionCount: post.reactionCount,
+      })),
+      userId,
+    );
+    const resolvedFavoriteStates =
+      favoriteStates ??
+      (await this.feedRepository.getFeedFavoriteStates(
+        posts.map((post) => ({
+          id: post.id,
+        })),
+        userId,
+      ));
+
+    return {
+      items: this.mapPostsToFeedItems(
+        posts,
+        userId,
+        reactionStates,
+        resolvedFavoriteStates,
+      ),
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  private mapPostsToFeedItems(
+    posts: FeedPostRecord[],
+    userId: string,
+    reactionStates: Map<string, FeedReactionStateDto>,
+    favoriteStates: Map<string, FeedFavoriteStateDto>,
+  ): FeedItemDto[] {
+    return posts.map<FeedItemDto>((post) =>
+      this.toFeedItemDto(
+        post,
+        userId,
+        reactionStates.get(post.id),
+        favoriteStates.get(post.id),
+      ),
+    );
+  }
+
+  private createFavoritedStateMap(
+    posts: FeedPostRecord[],
+  ): Map<string, FeedFavoriteStateDto> {
+    return new Map<string, FeedFavoriteStateDto>(
+      posts.map((post) => [
+        post.id,
+        {
+          postId: post.id,
+          viewerHasFavorited: true,
+        },
+      ]),
+    );
+  }
+
+  private async getRequiredPublishedPost(postId: string): Promise<{
+    id: string;
+    authorId: string;
+  }> {
+    const post = await this.feedRepository.findPublishedPostById(postId);
+    if (post != null) {
+      return post;
+    }
+
+    throw new NotFoundException("Post not found.");
+  }
+
+  private slicePage<T>(items: T[], limit: number): {
+    items: T[];
+    hasMore: boolean;
+    lastItem?: T;
+  } {
+    const hasMore = items.length > limit;
+    const pageItems = hasMore ? items.slice(0, limit) : items;
+
+    return {
+      items: pageItems,
+      hasMore,
+      lastItem:
+        pageItems.length > 0 ? pageItems[pageItems.length - 1] : undefined,
+    };
   }
 
   private normalizeRequiredBody(body: string): string {
@@ -557,23 +583,7 @@ export class FeedService {
   }
 
   private toFeedItemDto(
-    post: {
-      id: string;
-      postNumber: number;
-      authorId: string;
-      body: string;
-      visibility: "PUBLIC" | "ANONYMOUS";
-      type: PostType | null;
-      reactionCount: number;
-      commentCount: number;
-      publishedAt: Date | null;
-      createdAt: Date;
-      author: {
-        email: string;
-        name: string | null;
-        userType: "HUMAN" | "AI";
-      };
-    },
+    post: FeedPostRecord,
     userId: string,
     reactionState?: FeedReactionStateDto,
     favoriteState?: FeedFavoriteStateDto,

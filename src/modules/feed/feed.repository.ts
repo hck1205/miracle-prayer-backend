@@ -15,6 +15,26 @@ import type {
   FeedReactionStateDto,
 } from "./feed.dto";
 
+const FEED_POST_SELECT = Prisma.validator<Prisma.PostSelect>()({
+  id: true,
+  postNumber: true,
+  authorId: true,
+  body: true,
+  visibility: true,
+  type: true,
+  reactionCount: true,
+  commentCount: true,
+  publishedAt: true,
+  createdAt: true,
+  author: {
+    select: {
+      email: true,
+      name: true,
+      userType: true,
+    },
+  },
+});
+
 const EMPTY_REACTION_SUMMARY: FeedReactionSummaryDto = {
   LOVE: 0,
   AMEN: 0,
@@ -73,25 +93,7 @@ export class FeedRepository {
         },
       ],
       take: limit + 1,
-      select: {
-        id: true,
-        postNumber: true,
-        authorId: true,
-        body: true,
-        visibility: true,
-        type: true,
-        reactionCount: true,
-        commentCount: true,
-        publishedAt: true,
-        createdAt: true,
-        author: {
-          select: {
-            email: true,
-            name: true,
-            userType: true,
-          },
-        },
-      },
+      select: FEED_POST_SELECT,
     });
   }
 
@@ -147,25 +149,7 @@ export class FeedRepository {
         id: true,
         createdAt: true,
         post: {
-          select: {
-            id: true,
-            postNumber: true,
-            authorId: true,
-            body: true,
-            visibility: true,
-            type: true,
-            reactionCount: true,
-            commentCount: true,
-            publishedAt: true,
-            createdAt: true,
-            author: {
-              select: {
-                email: true,
-                name: true,
-                userType: true,
-              },
-            },
-          },
+          select: FEED_POST_SELECT,
         },
       },
     });
@@ -189,25 +173,7 @@ export class FeedRepository {
         },
       ],
       take: limit,
-      select: {
-        id: true,
-        postNumber: true,
-        authorId: true,
-        body: true,
-        visibility: true,
-        type: true,
-        reactionCount: true,
-        commentCount: true,
-        publishedAt: true,
-        createdAt: true,
-        author: {
-          select: {
-            email: true,
-            name: true,
-            userType: true,
-          },
-        },
-      },
+      select: FEED_POST_SELECT,
     });
   }
 
