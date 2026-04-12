@@ -24,6 +24,7 @@ import {
   GetFeedQueryDto,
   GetUrgentEligibilityQueryDto,
   ReportFeedPostDto,
+  SearchFeedQueryDto,
   SetPostReactionDto,
   UpdateFeedPostDto,
 } from "./feed.dto";
@@ -43,6 +44,19 @@ export class FeedController {
     @Query() query: GetFeedQueryDto,
   ): Promise<FeedResponseDto> {
     return this.feedService.getFeed({
+      limit: query.limit,
+      cursor: query.cursor,
+      userId: user.sub,
+    });
+  }
+
+  @Get("search")
+  searchFeed(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() query: SearchFeedQueryDto,
+  ): Promise<FeedResponseDto> {
+    return this.feedService.searchFeed({
+      query: query.q,
       limit: query.limit,
       cursor: query.cursor,
       userId: user.sub,

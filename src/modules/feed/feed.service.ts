@@ -79,6 +79,39 @@ export class FeedService {
     });
   }
 
+  async searchFeed({
+    query,
+    limit,
+    cursor,
+    userId,
+  }: {
+    query: string;
+    limit: number;
+    cursor?: string;
+    userId: string;
+  }): Promise<FeedResponseDto> {
+    const normalizedQuery = this.normalizeSearchQuery(query);
+    const decodedCursor = this.decodePublishedCursor(cursor);
+    const posts = await this.feedRepository.searchPublishedFeed({
+      query: normalizedQuery,
+      limit,
+      cursor: decodedCursor,
+    });
+    const page = this.slicePage(posts, limit);
+
+    return this.buildFeedResponseFromPosts({
+      posts: page.items,
+      userId,
+      hasMore: page.hasMore,
+      nextCursor: page.hasMore
+        ? this.encodePublishedCursor(
+            page.lastItem?.publishedAt ?? page.lastItem?.createdAt,
+            page.lastItem?.id,
+          )
+        : null,
+    });
+  }
+
   async getFavorites({
     limit,
     cursor,
@@ -428,6 +461,22 @@ export class FeedService {
     }
 
     return normalizedBody;
+  }
+
+  private normalizeSearchQuery(query: string): string {
+    const normalizedQuery = query.trim().replace(/\s+/g, " ");
+
+    if (normalizedQuery.length === 0) {
+      throw new BadRequestException("Search query is required.");
+    }
+
+    if (normalizedQuery.length < 2) {
+      throw new BadRequestException(
+        "Search query must be at least 2 characters.",
+      );
+    }
+
+    return normalizedQuery;
   }
 
   private async assertUrgentTypeAllowed({

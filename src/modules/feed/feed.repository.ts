@@ -97,6 +97,68 @@ export class FeedRepository {
     });
   }
 
+  async searchPublishedFeed({
+    query,
+    limit,
+    cursor,
+  }: {
+    query: string;
+    limit: number;
+    cursor?: {
+      publishedAt: Date;
+      id: string;
+    };
+  }) {
+    const searchTerms = query
+      .split(/\s+/)
+      .map((term) => term.trim())
+      .filter((term) => term.length > 0);
+
+    const where: Prisma.PostWhereInput = {
+      status: PostStatus.PUBLISHED,
+      publishedAt: {
+        not: null,
+      },
+      AND: searchTerms.map((term) => ({
+        body: {
+          contains: term,
+          mode: "insensitive",
+        },
+      })),
+      ...(cursor == null
+        ? {}
+        : {
+            OR: [
+              {
+                publishedAt: {
+                  lt: cursor.publishedAt,
+                },
+              },
+              {
+                publishedAt: cursor.publishedAt,
+                id: {
+                  lt: cursor.id,
+                },
+              },
+            ],
+          }),
+    };
+
+    return this.prisma.post.findMany({
+      where,
+      orderBy: [
+        {
+          publishedAt: "desc",
+        },
+        {
+          id: "desc",
+        },
+      ],
+      take: limit + 1,
+      select: FEED_POST_SELECT,
+    });
+  }
+
   async findFavoritedFeed({
     limit,
     cursor,

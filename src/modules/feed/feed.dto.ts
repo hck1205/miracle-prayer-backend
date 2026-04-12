@@ -15,6 +15,7 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
   ValidateIf,
 } from "class-validator";
 
@@ -29,6 +30,14 @@ export class GetFeedQueryDto {
   @IsOptional()
   @IsString()
   cursor?: string;
+}
+
+export class SearchFeedQueryDto extends GetFeedQueryDto {
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(2)
+  @MaxLength(100)
+  q = "";
 }
 
 export class SetPostReactionDto {
