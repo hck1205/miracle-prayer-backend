@@ -16,29 +16,19 @@ export class AuthRepository {
     name: string | null;
   }): Promise<User> {
     const { email, googleSubject, name } = params;
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (existingUser == null) {
-      const createData: Prisma.UserCreateInput = {
-        email,
-        googleSubject,
-        name: this.normalizeOptionalName(name),
-      };
-
-      return this.prisma.user.create({
-        data: createData,
-      });
-    }
-
+    const createData: Prisma.UserCreateInput = {
+      email,
+      googleSubject,
+      name: this.normalizeOptionalName(name),
+    };
     const updateData: Prisma.UserUpdateInput = {
       googleSubject,
     };
 
-    return this.prisma.user.update({
-      where: { id: existingUser.id },
-      data: updateData,
+    return this.prisma.user.upsert({
+      where: { email },
+      create: createData,
+      update: updateData,
     });
   }
 

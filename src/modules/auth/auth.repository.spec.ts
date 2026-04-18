@@ -18,8 +18,7 @@ describe("AuthRepository", () => {
 
   let prismaService: {
     user: {
-      create: jest.Mock;
-      findUnique: jest.Mock;
+      upsert: jest.Mock;
       update: jest.Mock;
     };
   };
@@ -28,8 +27,7 @@ describe("AuthRepository", () => {
   beforeEach(() => {
     prismaService = {
       user: {
-        create: jest.fn(),
-        findUnique: jest.fn(),
+        upsert: jest.fn(),
         update: jest.fn(),
       },
     };
@@ -37,8 +35,7 @@ describe("AuthRepository", () => {
   });
 
   it("preserves the existing name when a returning Google user signs in again", async () => {
-    prismaService.user.findUnique.mockResolvedValue(existingUser);
-    prismaService.user.update.mockResolvedValue(existingUser);
+    prismaService.user.upsert.mockResolvedValue(existingUser);
 
     await expect(
       authRepository.upsertGoogleUser({
@@ -48,9 +45,14 @@ describe("AuthRepository", () => {
       }),
     ).resolves.toBe(existingUser);
 
-    expect(prismaService.user.update).toHaveBeenCalledWith({
-      where: { id: existingUser.id },
-      data: {
+    expect(prismaService.user.upsert).toHaveBeenCalledWith({
+      where: { email: existingUser.email },
+      create: {
+        email: existingUser.email,
+        googleSubject: "google-subject-2",
+        name: "Google Name",
+      },
+      update: {
         googleSubject: "google-subject-2",
       },
     });
