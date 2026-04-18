@@ -1,12 +1,11 @@
-﻿import { UnauthorizedException } from "@nestjs/common";
+import { UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { JwtService } from "@nestjs/jwt";
+import type { JwtService } from "@nestjs/jwt";
 import { createHash } from "crypto";
 
-import { AuthRepository } from "./auth.repository";
+import type { AuthRepository } from "./auth.repository";
 import { AuthService } from "./auth.service";
-import type { VerifiedGoogleUser } from "./google-auth.client";
-import { GoogleAuthClient } from "./google-auth.client";
+import type { VerifiedGoogleUser, GoogleAuthClient } from "./google-auth.client";
 
 describe("AuthService", () => {
   const verifiedGoogleUser: VerifiedGoogleUser = {
@@ -26,25 +25,50 @@ describe("AuthService", () => {
     updatedAt: new Date(),
   };
 
-  let authRepository: jest.Mocked<AuthRepository>;
-  let googleAuthClient: jest.Mocked<GoogleAuthClient>;
-  let jwtService: jest.Mocked<JwtService>;
+  let authRepository: AuthRepository;
+  let googleAuthClient: GoogleAuthClient;
+  let jwtService: JwtService;
+  let upsertGoogleUserMock: jest.MockedFunction<AuthRepository["upsertGoogleUser"]>;
+  let findUserByIdMock: jest.MockedFunction<AuthRepository["findUserById"]>;
+  let updateRefreshTokenMock: jest.MockedFunction<AuthRepository["updateRefreshToken"]>;
+  let updateUserProfileMock: jest.MockedFunction<AuthRepository["updateUserProfile"]>;
+  let verifyIdTokenMock: jest.MockedFunction<GoogleAuthClient["verifyIdToken"]>;
+  let signAsyncMock: jest.MockedFunction<JwtService["signAsync"]>;
+  let verifyAsyncMock: jest.MockedFunction<JwtService["verifyAsync"]>;
   let authService: AuthService;
 
   beforeEach(() => {
+    upsertGoogleUserMock = jest.fn() as jest.MockedFunction<
+      AuthRepository["upsertGoogleUser"]
+    >;
+    findUserByIdMock = jest.fn() as jest.MockedFunction<AuthRepository["findUserById"]>;
+    updateRefreshTokenMock = jest.fn() as jest.MockedFunction<
+      AuthRepository["updateRefreshToken"]
+    >;
+    updateUserProfileMock = jest.fn() as jest.MockedFunction<
+      AuthRepository["updateUserProfile"]
+    >;
+
     authRepository = {
-      upsertGoogleUser: jest.fn(),
-      findUserById: jest.fn(),
-      updateRefreshToken: jest.fn(),
-      updateUserProfile: jest.fn(),
-    } as unknown as jest.Mocked<AuthRepository>;
+      upsertGoogleUser: upsertGoogleUserMock,
+      findUserById: findUserByIdMock,
+      updateRefreshToken: updateRefreshTokenMock,
+      updateUserProfile: updateUserProfileMock,
+    } as AuthRepository;
+
+    verifyIdTokenMock = jest.fn() as jest.MockedFunction<
+      GoogleAuthClient["verifyIdToken"]
+    >;
     googleAuthClient = {
-      verifyIdToken: jest.fn(),
-    } as unknown as jest.Mocked<GoogleAuthClient>;
+      verifyIdToken: verifyIdTokenMock,
+    } as GoogleAuthClient;
+
+    signAsyncMock = jest.fn() as jest.MockedFunction<JwtService["signAsync"]>;
+    verifyAsyncMock = jest.fn() as jest.MockedFunction<JwtService["verifyAsync"]>;
     jwtService = {
-      signAsync: jest.fn(),
-      verifyAsync: jest.fn(),
-    } as unknown as jest.Mocked<JwtService>;
+      signAsync: signAsyncMock,
+      verifyAsync: verifyAsyncMock,
+    } as JwtService;
 
     authService = new AuthService(
       authRepository,
@@ -59,10 +83,10 @@ describe("AuthService", () => {
   });
 
   it("returns a token pair and user profile after Google login", async () => {
-    googleAuthClient.verifyIdToken.mockResolvedValue(verifiedGoogleUser);
-    authRepository.upsertGoogleUser.mockResolvedValue(persistedUser as never);
-    authRepository.updateRefreshToken.mockResolvedValue(persistedUser as never);
-    jwtService.signAsync
+    verifyIdTokenMock.mockResolvedValue(verifiedGoogleUser);
+    upsertGoogleUserMock.mockResolvedValue(persistedUser as never);
+    updateRefreshTokenMock.mockResolvedValue(persistedUser as never);
+    signAsyncMock
       .mockResolvedValueOnce("signed-access-token")
       .mockResolvedValueOnce("signed-refresh-token");
 
@@ -88,14 +112,14 @@ describe("AuthService", () => {
       refreshTokenExpiresAt: new Date(Date.now() + 60_000),
     };
 
-    jwtService.verifyAsync.mockResolvedValue({
+    verifyAsyncMock.mockResolvedValue({
       sub: persistedUser.id,
       type: "refresh",
       jti: "token-1",
     } as never);
-    authRepository.findUserById.mockResolvedValue(storedUser as never);
-    authRepository.updateRefreshToken.mockResolvedValue(storedUser as never);
-    jwtService.signAsync
+    findUserByIdMock.mockResolvedValue(storedUser as never);
+    updateRefreshTokenMock.mockResolvedValue(storedUser as never);
+    signAsyncMock
       .mockResolvedValueOnce("rotated-access-token")
       .mockResolvedValueOnce("rotated-refresh-token");
 
@@ -109,7 +133,7 @@ describe("AuthService", () => {
   });
 
   it("throws when the authenticated user cannot be found", async () => {
-    authRepository.findUserById.mockResolvedValue(null);
+    findUserByIdMock.mockResolvedValue(null);
 
     await expect(authService.getCurrentUser("missing-user")).rejects.toBeInstanceOf(
       UnauthorizedException,
@@ -117,10 +141,10 @@ describe("AuthService", () => {
   });
 
   it("clears the stored refresh token on logout", async () => {
-    authRepository.updateRefreshToken.mockResolvedValue(persistedUser as never);
+    updateRefreshTokenMock.mockResolvedValue(persistedUser as never);
 
     await expect(authService.logout(persistedUser.id)).resolves.toBeUndefined();
-    expect(authRepository.updateRefreshToken).toHaveBeenCalledWith({
+    expect(updateRefreshTokenMock).toHaveBeenCalledWith({
       userId: persistedUser.id,
       refreshTokenHash: null,
       refreshTokenExpiresAt: null,
@@ -128,7 +152,7 @@ describe("AuthService", () => {
   });
 
   it("updates the authenticated user's profile name", async () => {
-    authRepository.updateUserProfile.mockResolvedValue({
+    updateUserProfileMock.mockResolvedValue({
       ...persistedUser,
       name: "Quiet Candle",
     } as never);
@@ -141,7 +165,7 @@ describe("AuthService", () => {
       name: "Quiet Candle",
     });
 
-    expect(authRepository.updateUserProfile).toHaveBeenCalledWith({
+    expect(updateUserProfileMock).toHaveBeenCalledWith({
       userId: persistedUser.id,
       name: "Quiet Candle",
     });
