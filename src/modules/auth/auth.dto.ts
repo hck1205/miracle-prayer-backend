@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString } from "class-validator";
+import { IsDefined, IsNotEmpty, IsString } from "class-validator";
 
 export class GoogleLoginDto {
   @IsString()
@@ -10,6 +10,12 @@ export class RefreshTokenDto {
   @IsString()
   @IsNotEmpty()
   refreshToken!: string;
+}
+
+export class UpdateProfileDto {
+  @IsDefined()
+  @IsString()
+  name!: string;
 }
 
 export interface AuthenticatedUser {

@@ -92,6 +92,18 @@ export class AuthService {
     return this.toAuthenticatedUser(await this.getRequiredUser(userId));
   }
 
+  /**
+   * Persists the authenticated user's profile fields that are editable in the app.
+   */
+  async updateCurrentUserProfile(userId: string, name: string): Promise<AuthenticatedUser> {
+    const user = await this.authRepository.updateUserProfile({
+      userId,
+      name: this.normalizeOptionalName(name),
+    });
+
+    return this.toAuthenticatedUser(user);
+  }
+
   private createAccessTokenPayload(user: {
     id: string;
     email: string;
@@ -170,6 +182,11 @@ export class AuthService {
 
   private hashToken(token: string): string {
     return createHash("sha256").update(token).digest("hex");
+  }
+
+  private normalizeOptionalName(name: string | null | undefined): string | null {
+    const trimmedName = name?.trim();
+    return trimmedName ? trimmedName : null;
   }
 
   private async getRequiredUser(userId: string): Promise<{

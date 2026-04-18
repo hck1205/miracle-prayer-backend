@@ -36,6 +36,7 @@ describe("AuthService", () => {
       upsertGoogleUser: jest.fn(),
       findUserById: jest.fn(),
       updateRefreshToken: jest.fn(),
+      updateUserProfile: jest.fn(),
     } as unknown as jest.Mocked<AuthRepository>;
     googleAuthClient = {
       verifyIdToken: jest.fn(),
@@ -123,6 +124,26 @@ describe("AuthService", () => {
       userId: persistedUser.id,
       refreshTokenHash: null,
       refreshTokenExpiresAt: null,
+    });
+  });
+
+  it("updates the authenticated user's profile name", async () => {
+    authRepository.updateUserProfile.mockResolvedValue({
+      ...persistedUser,
+      name: "Quiet Candle",
+    } as never);
+
+    await expect(
+      authService.updateCurrentUserProfile(persistedUser.id, "  Quiet Candle  "),
+    ).resolves.toEqual({
+      id: persistedUser.id,
+      email: persistedUser.email,
+      name: "Quiet Candle",
+    });
+
+    expect(authRepository.updateUserProfile).toHaveBeenCalledWith({
+      userId: persistedUser.id,
+      name: "Quiet Candle",
     });
   });
 });

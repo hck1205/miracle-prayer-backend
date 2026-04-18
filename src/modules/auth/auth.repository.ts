@@ -16,20 +16,29 @@ export class AuthRepository {
     name: string | null;
   }): Promise<User> {
     const { email, googleSubject, name } = params;
-    const createData: Prisma.UserCreateInput = {
-      email,
-      googleSubject,
-      name,
-    };
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (existingUser == null) {
+      const createData: Prisma.UserCreateInput = {
+        email,
+        googleSubject,
+        name: this.normalizeOptionalName(name),
+      };
+
+      return this.prisma.user.create({
+        data: createData,
+      });
+    }
+
     const updateData: Prisma.UserUpdateInput = {
       googleSubject,
-      name,
     };
 
-    return this.prisma.user.upsert({
-      where: { email },
-      create: createData,
-      update: updateData,
+    return this.prisma.user.update({
+      where: { id: existingUser.id },
+      data: updateData,
     });
   }
 
@@ -56,5 +65,24 @@ export class AuthRepository {
         refreshTokenExpiresAt,
       },
     });
+  }
+
+  async updateUserProfile(params: {
+    userId: string;
+    name: string | null;
+  }): Promise<User> {
+    const { name, userId } = params;
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: this.normalizeOptionalName(name),
+      },
+    });
+  }
+
+  private normalizeOptionalName(name: string | null | undefined): string | null {
+    const trimmedName = name?.trim();
+    return trimmedName ? trimmedName : null;
   }
 }

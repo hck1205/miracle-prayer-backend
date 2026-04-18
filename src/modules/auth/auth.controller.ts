@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
 
 import type { AuthenticatedUser, AuthTokens, LoginResponse } from "./auth.dto";
 import { GoogleLoginDto } from "./auth.dto";
 import { RefreshTokenDto } from "./auth.dto";
+import { UpdateProfileDto } from "./auth.dto";
 import { AuthService } from "./auth.service";
 import { CurrentUser } from "./current-user.decorator";
 import type { AccessTokenPayload } from "./jwt-auth.guard";
@@ -32,5 +33,14 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   getCurrentUser(@CurrentUser() user: AccessTokenPayload): Promise<AuthenticatedUser> {
     return this.authService.getCurrentUser(user.sub);
+  }
+
+  @Patch("me")
+  @UseGuards(JwtAuthGuard)
+  updateCurrentUserProfile(
+    @CurrentUser() user: AccessTokenPayload,
+    @Body() body: UpdateProfileDto,
+  ): Promise<AuthenticatedUser> {
+    return this.authService.updateCurrentUserProfile(user.sub, body.name);
   }
 }
