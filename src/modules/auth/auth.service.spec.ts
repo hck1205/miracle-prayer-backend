@@ -7,6 +7,15 @@ import type { AuthRepository } from "./auth.repository";
 import { AuthService } from "./auth.service";
 import type { VerifiedGoogleUser, GoogleAuthClient } from "./google-auth.client";
 
+type AuthRepositoryMock = Pick<
+  AuthRepository,
+  "upsertGoogleUser" | "findUserById" | "updateRefreshToken" | "updateUserProfile"
+>;
+
+type GoogleAuthClientMock = Pick<GoogleAuthClient, "verifyIdToken">;
+
+type JwtServiceMock = Pick<JwtService, "signAsync" | "verifyAsync">;
+
 describe("AuthService", () => {
   const verifiedGoogleUser: VerifiedGoogleUser = {
     googleSubject: "google-subject-123",
@@ -25,9 +34,9 @@ describe("AuthService", () => {
     updatedAt: new Date(),
   };
 
-  let authRepository: AuthRepository;
-  let googleAuthClient: GoogleAuthClient;
-  let jwtService: JwtService;
+  let authRepository: AuthRepositoryMock;
+  let googleAuthClient: GoogleAuthClientMock;
+  let jwtService: JwtServiceMock;
   let upsertGoogleUserMock: jest.MockedFunction<AuthRepository["upsertGoogleUser"]>;
   let findUserByIdMock: jest.MockedFunction<AuthRepository["findUserById"]>;
   let updateRefreshTokenMock: jest.MockedFunction<AuthRepository["updateRefreshToken"]>;
@@ -54,26 +63,26 @@ describe("AuthService", () => {
       findUserById: findUserByIdMock,
       updateRefreshToken: updateRefreshTokenMock,
       updateUserProfile: updateUserProfileMock,
-    } as AuthRepository;
+    };
 
     verifyIdTokenMock = jest.fn() as jest.MockedFunction<
       GoogleAuthClient["verifyIdToken"]
     >;
     googleAuthClient = {
       verifyIdToken: verifyIdTokenMock,
-    } as GoogleAuthClient;
+    };
 
     signAsyncMock = jest.fn() as jest.MockedFunction<JwtService["signAsync"]>;
     verifyAsyncMock = jest.fn() as jest.MockedFunction<JwtService["verifyAsync"]>;
     jwtService = {
       signAsync: signAsyncMock,
       verifyAsync: verifyAsyncMock,
-    } as JwtService;
+    };
 
     authService = new AuthService(
-      authRepository,
-      googleAuthClient,
-      jwtService,
+      authRepository as unknown as AuthRepository,
+      googleAuthClient as unknown as GoogleAuthClient,
+      jwtService as unknown as JwtService,
       new ConfigService({
         JWT_ACCESS_EXPIRES_IN: "900",
         JWT_REFRESH_SECRET: "refresh-secret",
